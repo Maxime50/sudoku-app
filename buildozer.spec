@@ -33,6 +33,9 @@ android.archs = arm64-v8a, armeabi-v7a
 
 android.allow_backup = True
 
+# Force le multitouch tactile sur Android
+android.entrypoint = org.kivy.android.PythonActivity
+
 [buildozer]
 log_level = 2
 warn_on_root = 0
