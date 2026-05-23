@@ -20,7 +20,9 @@ jobs:
         run: git config --global --add safe.directory '*'
 
       - name: Build APK
-        run: buildozer android debug
+        env:
+          BUILDOZER_WARN_ON_ROOT: "0"
+        run: yes | buildozer android debug
 
       - name: Upload APK
         if: success()
