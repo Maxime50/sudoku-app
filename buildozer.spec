@@ -11,7 +11,7 @@ source.exclude_dirs = tests, bin, venv, __pycache__, .github
 
 version = 1.0
 
-requirements = hostpython3==3.11.10,python3==3.11.10,kivy==2.3.0,pillow
+requirements = python3,kivy==2.3.0,pillow
 
 orientation = portrait
 fullscreen = 0
@@ -24,8 +24,7 @@ android.permissions = INTERNET
 
 android.api = 33
 android.minapi = 21
-android.ndk_api = 21
-android.ndk = 25b
+android.ndk_api = 25b
 
 android.accept_sdk_license = True
 android.release_artifact = apk
