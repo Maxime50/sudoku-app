@@ -11,10 +11,7 @@ source.exclude_dirs = tests, bin, venv, __pycache__, .github
 
 version = 1.0
 
-requirements = python3,kivy==2.3.0,pillow
-p4a.branch = master
-p4a.fork = kivy
-p4a.commit = v2024.1.21
+requirements = python3,kivy,pillow
 
 orientation = portrait
 fullscreen = 0
@@ -27,8 +24,6 @@ android.permissions = INTERNET
 
 android.api = 33
 android.minapi = 21
-android.ndk_api = 21
-android.ndk = 25b
 
 android.accept_sdk_license = True
 android.release_artifact = apk
