@@ -12,8 +12,9 @@ source.exclude_dirs = tests, bin, venv, __pycache__, .github
 version = 1.0
 
 requirements = python3,kivy==2.3.0,pillow
-p4a.branch = 2024.01.21
+p4a.branch = master
 p4a.fork = kivy
+p4a.commit = v2024.1.21
 
 orientation = portrait
 fullscreen = 0
