@@ -1,11 +1,8 @@
 """
-Sudoku — Application mobile Kivy
-Portée pour Android via Buildozer
-- Page d'accueil, sélection difficulté, statistiques, règles
-- 4 niveaux, 3 erreurs max, notes, annuler, gomme, pause, astuce
-- Mode appui long sur un chiffre
-- Surlignage des chiffres identiques
-- Sauvegarde / reprise persistantes
+Sudoku — Application mobile Kivy (version Android-friendly)
+- Taille dynamique pour s'adapter à tout écran
+- Symboles texte universels au lieu d'emojis
+- Tout le reste pareil
 """
 
 import json
@@ -17,25 +14,30 @@ import time
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
-from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.relativelayout import RelativeLayout
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
-from kivy.uix.button import Button
 from kivy.uix.widget import Widget
 from kivy.uix.modalview import ModalView
 from kivy.graphics import Color, Rectangle, RoundedRectangle, Line
 from kivy.clock import Clock
 from kivy.core.window import Window
-from kivy.properties import (NumericProperty, StringProperty,
-                             BooleanProperty, ListProperty, ObjectProperty)
+from kivy.properties import (NumericProperty, BooleanProperty,
+                             ListProperty, ObjectProperty)
 from kivy.utils import get_color_from_hex as hex_to_rgba
 from kivy.metrics import dp
 
 
-# Fenêtre par défaut pour test desktop (ratio téléphone)
-Window.size = (420, 820)
+# Fenêtre par défaut uniquement pour le test desktop
+import sys as _sys
+if _sys.platform in ('win32', 'darwin') or _sys.platform.startswith('linux'):
+    try:
+        from kivy.utils import platform as _kplat
+        if _kplat != 'android':
+            Window.size = (420, 820)
+    except Exception:
+        pass
 
 
 # ============================================================
@@ -72,10 +74,35 @@ class T:
 
 
 # ============================================================
+#  ICONES (caractères Unicode universels, sans emojis)
+# ============================================================
+class I:
+    SETTINGS = 'Set'
+    TROPHY = '*'
+    HOME = '<'
+    HELP = '?'
+    STATS = '...'
+    BACK = '<'
+    UNDO = 'U'
+    ERASE = 'X'
+    NOTES = 'N'
+    HINT = '?'
+    PAUSE = '||'
+    PLAY = '>'
+    CHECK = 'V'
+    CROSS = 'X'
+    STAR = '*'
+    CLOCK = 'T'
+    EASY = 'F'
+    MEDIUM = 'M'
+    HARD = 'D'
+    EXPERT = 'E'
+
+
+# ============================================================
 #  PERSISTANCE
 # ============================================================
 def _storage_dir():
-    """Renvoie un dossier persistant valide même sur Android."""
     try:
         from android.storage import app_storage_path
         return app_storage_path()
@@ -184,7 +211,6 @@ class SudokuGenerator:
 #  WIDGETS DE BASE
 # ============================================================
 class TappableBox(BoxLayout):
-    """BoxLayout cliquable avec callback et couleur de fond"""
     bg_color = ListProperty(T.CARD)
     border_color = ListProperty([0, 0, 0, 0])
     radius = NumericProperty(dp(12))
@@ -251,7 +277,6 @@ class TappableBox(BoxLayout):
 
 
 class IconLabel(Label):
-    """Label avec callback au clic"""
     on_press_cb = ObjectProperty(None, allownone=True)
 
     def on_touch_down(self, touch):
@@ -286,7 +311,7 @@ class SudokuGrid(Widget):
         if cs <= 0:
             return True
         col = int((touch.x - self.x) // cs)
-        row = 8 - int((touch.y - self.y) // cs)  # inversion Y (Kivy = bas-gauche)
+        row = 8 - int((touch.y - self.y) // cs)
         if 0 <= row < 9 and 0 <= col < 9:
             self.game.on_cell_clicked(row, col)
         return True
@@ -301,22 +326,20 @@ class SudokuGrid(Widget):
             y0 = self.y
             grid_size = cs * 9
 
-            # Mode pause
             if self.game.paused:
                 Color(*hex_to_rgba('#E1E6F0'))
                 Rectangle(pos=(x0, y0), size=(grid_size, grid_size))
                 Color(*T.GRID_BORDER)
                 Line(rectangle=(x0, y0, grid_size, grid_size), width=2)
                 Label(
-                    text='[size=80]⏸[/size]\n[size=30][b]Pause[/b][/size]',
-                    markup=True, color=T.TEXT_DARK,
+                    text='[b]Pause[/b]',
+                    markup=True, color=T.TEXT_DARK, font_size=dp(30),
                     halign='center', valign='middle',
                     pos=(x0, y0), size=(grid_size, grid_size),
                     text_size=(grid_size, grid_size)
                 )
                 return
 
-            # Backgrounds des cases
             for r in range(9):
                 for c in range(9):
                     bg = self.game._cell_bg(r, c)
@@ -325,7 +348,6 @@ class SudokuGrid(Widget):
                     cy = y0 + (8 - r) * cs
                     Rectangle(pos=(cx, cy), size=(cs, cs))
 
-            # Lignes
             for i in range(10):
                 if i % 3 == 0:
                     Color(*T.GRID_BORDER)
@@ -338,7 +360,6 @@ class SudokuGrid(Widget):
                 Line(points=[x0 + i * cs, y0, x0 + i * cs, y0 + grid_size],
                      width=width)
 
-        # Chiffres / notes via labels (clear puis re-add)
         self.clear_widgets()
         cs = self.cell_size
         x0 = self.x
@@ -356,7 +377,7 @@ class SudokuGrid(Widget):
                     else:
                         col = T.TEXT_USER
                     lbl = Label(
-                        text=f'[b]{v}[/b]',
+                        text='[b]{}[/b]'.format(v),
                         markup=True, color=col,
                         font_size=cs * 0.55,
                         pos=(cx, cy), size=(cs, cs),
@@ -374,7 +395,7 @@ class SudokuGrid(Widget):
                         weight_open = '[b]' if active else ''
                         weight_close = '[/b]' if active else ''
                         lbl = Label(
-                            text=f'{weight_open}{n}{weight_close}',
+                            text='{}{}{}'.format(weight_open, n, weight_close),
                             markup=True, color=col,
                             font_size=cs * 0.22,
                             pos=(nx, ny), size=(cs / 3, cs / 3),
@@ -410,6 +431,10 @@ class GameScreen(BoxLayout):
         self.elapsed = 0
         self.game_over = False
 
+        self.press_time = None
+        self.long_press_id = None
+        self.long_press_threshold = 500
+
         self._build_ui()
 
         if resume_data:
@@ -418,8 +443,6 @@ class GameScreen(BoxLayout):
             Clock.schedule_once(lambda dt: self._generate_new(), 0.05)
 
         self._timer_event = Clock.schedule_interval(self._update_timer, 1.0)
-
-        # Bindings clavier (desktop)
         Window.bind(on_key_down=self._on_key_down)
 
     def cleanup(self):
@@ -427,9 +450,11 @@ class GameScreen(BoxLayout):
             self._timer_event.cancel()
         except Exception:
             pass
-        Window.unbind(on_key_down=self._on_key_down)
+        try:
+            Window.unbind(on_key_down=self._on_key_down)
+        except Exception:
+            pass
 
-    # ----- UI -----
     def _build_ui(self):
         with self.canvas.before:
             Color(*T.BG)
@@ -437,37 +462,37 @@ class GameScreen(BoxLayout):
         self.bind(pos=self._update_bg, size=self._update_bg)
 
         # Top bar
-        top = BoxLayout(size_hint_y=None, height=dp(56),
-                        padding=[dp(14), dp(10), dp(14), 0], spacing=dp(8))
+        top = BoxLayout(size_hint_y=None, height=dp(50),
+                        padding=[dp(14), dp(8), dp(14), 0], spacing=dp(8))
 
-        back_box = TappableBox(size_hint_x=None, width=dp(56),
+        back_box = TappableBox(size_hint_x=None, width=dp(50),
                                bg_color=T.CARD,
                                border_color=T.GRID_LINE,
                                on_press_cb=self.go_home)
-        back_box.add_widget(Label(text='←', font_size=dp(22),
+        back_box.add_widget(Label(text=I.BACK, font_size=dp(20),
                                   color=T.TEXT_DARK, bold=True))
         top.add_widget(back_box)
-        top.add_widget(Widget())  # spacer
+        top.add_widget(Widget())
 
-        right_pill = TappableBox(size_hint_x=None, width=dp(140),
+        right_pill = TappableBox(size_hint_x=None, width=dp(150),
                                  bg_color=T.CARD,
                                  border_color=T.GRID_LINE,
                                  spacing=dp(0))
-        for icon, cmd in [('🏠', self.go_home),
-                          ('🏆', self.app.show_stats),
-                          ('⚙', self.app.show_help)]:
-            il = IconLabel(text=icon, font_size=dp(14),
-                           color=T.TEXT_DARK, on_press_cb=cmd)
+        for label, cmd in [(I.HOME, self.go_home),
+                           (I.TROPHY, self.app.show_stats),
+                           (I.SETTINGS, self.app.show_help)]:
+            il = IconLabel(text=label, font_size=dp(12),
+                           color=T.TEXT_DARK, bold=True,
+                           on_press_cb=cmd)
             right_pill.add_widget(il)
         top.add_widget(right_pill)
-
         self.add_widget(top)
 
         # Ligne d'infos
         info = BoxLayout(size_hint_y=None, height=dp(28),
                          padding=[dp(20), 0, dp(20), 0])
         self.diff_label = Label(text=self.difficulty,
-                                font_size=dp(12),
+                                font_size=dp(13),
                                 color=T.TEXT_MUTED,
                                 size_hint_x=0.3, halign='left',
                                 valign='middle')
@@ -475,7 +500,7 @@ class GameScreen(BoxLayout):
         info.add_widget(self.diff_label)
 
         self.err_label = Label(text='Erreur: 0/3',
-                               font_size=dp(12),
+                               font_size=dp(13),
                                color=T.TEXT_MUTED,
                                size_hint_x=0.4, halign='center',
                                valign='middle')
@@ -483,49 +508,47 @@ class GameScreen(BoxLayout):
         info.add_widget(self.err_label)
 
         right_info = BoxLayout(size_hint_x=0.3, spacing=dp(4))
-        self.timer_label = Label(text='00:00', font_size=dp(12),
+        self.timer_label = Label(text='00:00', font_size=dp(13),
                                  color=T.TEXT_MUTED,
                                  halign='right', valign='middle')
         self.timer_label.bind(size=self._fix_label)
         right_info.add_widget(self.timer_label)
 
-        self.pause_icon = IconLabel(text='⏸', font_size=dp(14),
-                                    color=T.PRIMARY,
-                                    size_hint_x=None, width=dp(24),
+        self.pause_icon = IconLabel(text=I.PAUSE, font_size=dp(14),
+                                    color=T.PRIMARY, bold=True,
+                                    size_hint_x=None, width=dp(30),
                                     on_press_cb=self.toggle_pause)
         right_info.add_widget(self.pause_icon)
         info.add_widget(right_info)
-
         self.add_widget(info)
 
-        # Grille (carrée)
-        self.grid_anchor = AnchorLayout(size_hint_y=None,
-                                        anchor_x='center',
-                                        anchor_y='center',
-                                        padding=[dp(16), dp(8)])
-        self.grid_anchor.height = Window.width  # approximatif
-        Window.bind(size=self._resize_grid)
-        self.grid = SudokuGrid(self,
-                               size_hint=(None, None))
+        # Grille
+        self.grid_anchor = AnchorLayout(
+            size_hint_y=None,
+            anchor_x='center', anchor_y='center',
+            padding=[dp(8), dp(4)])
+        self.grid = SudokuGrid(self, size_hint=(None, None))
         self.grid_anchor.add_widget(self.grid)
         self.add_widget(self.grid_anchor)
+
+        Window.bind(size=self._resize_grid)
         Clock.schedule_once(lambda dt: self._resize_grid(), 0.01)
 
         # Boutons d'action
-        actions = BoxLayout(size_hint_y=None, height=dp(70),
-                            padding=[dp(8), dp(6)], spacing=dp(4))
-        self.undo_btn = self._make_action_btn('↶', 'Annuler', self.undo)
-        self.erase_btn = self._make_action_btn('⌫', 'Effacer', self.erase)
-        self.notes_btn = self._make_action_btn('✎', 'Notes',
-                                               self.toggle_notes, badge='ÉTEINT')
-        self.hint_btn = self._make_action_btn('💡', 'Astuce', self.use_hint)
+        actions = BoxLayout(size_hint_y=None, height=dp(64),
+                            padding=[dp(8), dp(4)], spacing=dp(4))
+        self.undo_btn = self._make_action_btn(I.UNDO, 'Annuler', self.undo)
+        self.erase_btn = self._make_action_btn(I.ERASE, 'Effacer', self.erase)
+        self.notes_btn = self._make_action_btn(I.NOTES, 'Notes',
+                                               self.toggle_notes, badge='OFF')
+        self.hint_btn = self._make_action_btn(I.HINT, 'Astuce', self.use_hint)
         for w in (self.undo_btn, self.erase_btn,
                   self.notes_btn, self.hint_btn):
             actions.add_widget(w['widget'])
         self.add_widget(actions)
 
         # Pavé numérique
-        nums = BoxLayout(size_hint_y=None, height=dp(56),
+        nums = BoxLayout(size_hint_y=None, height=dp(54),
                          padding=[dp(8), 0], spacing=dp(2))
         self.num_buttons = {}
         for i in range(1, 10):
@@ -535,9 +558,9 @@ class GameScreen(BoxLayout):
         self.add_widget(nums)
 
         # Info mode rapide
-        self.hold_label = Label(text='', font_size=dp(9),
+        self.hold_label = Label(text='', font_size=dp(10),
                                 color=T.WARNING,
-                                size_hint_y=None, height=dp(22),
+                                size_hint_y=None, height=dp(20),
                                 italic=True)
         self.add_widget(self.hold_label)
 
@@ -549,20 +572,22 @@ class GameScreen(BoxLayout):
         instance.text_size = instance.size
 
     def _resize_grid(self, *a):
-        size = min(Window.width - dp(32), Window.height - dp(360))
-        size = max(size, dp(200))
-        # Garde un multiple de 9 pour pixel-perfect
+        # Grille = largeur écran moins une petite marge
+        available_w = Window.width - dp(16)
+        # On laisse aussi de la place pour le reste de l'UI
+        available_h = Window.height - dp(260)
+        size = min(available_w, available_h)
+        size = max(size, dp(280))
         cell = int(size / 9)
         size = cell * 9
         self.grid.size = (size, size)
         self.grid_anchor.height = size + dp(16)
         self.grid._redraw()
 
-    # ----- Boutons d'action -----
     def _make_action_btn(self, icon, label, command, badge=None):
         wrap = BoxLayout(orientation='vertical')
         rel = RelativeLayout(size_hint_y=None, height=dp(32))
-        ic = IconLabel(text=icon, font_size=dp(20),
+        ic = IconLabel(text=icon, font_size=dp(18), bold=True,
                        color=T.TEXT_DARK, on_press_cb=command)
         rel.add_widget(ic)
 
@@ -571,11 +596,11 @@ class GameScreen(BoxLayout):
             badge_widget = BadgeLabel(text=badge,
                                       pos_hint={'right': 1, 'top': 1.05},
                                       size_hint=(None, None),
-                                      size=(dp(50), dp(16)))
+                                      size=(dp(46), dp(16)))
             rel.add_widget(badge_widget)
 
         wrap.add_widget(rel)
-        lb = IconLabel(text=label, font_size=dp(10),
+        lb = IconLabel(text=label, font_size=dp(11),
                        color=T.TEXT_MUTED, on_press_cb=command,
                        size_hint_y=None, height=dp(20))
         wrap.add_widget(lb)
@@ -586,16 +611,16 @@ class GameScreen(BoxLayout):
             btn['icon'].color = T.PRIMARY
             btn['label'].color = T.PRIMARY
             if btn['badge']:
-                btn['badge'].set_state('ALLUMÉ', T.SUCCESS)
+                btn['badge'].set_state('ON', T.SUCCESS)
         else:
             btn['icon'].color = T.TEXT_DARK
             btn['label'].color = T.TEXT_MUTED
             if btn['badge']:
-                btn['badge'].set_state('ÉTEINT', hex_to_rgba('#9AA5BD'))
+                btn['badge'].set_state('OFF', hex_to_rgba('#9AA5BD'))
 
-    # ----- Etat -----
+    # État
     def _generate_new(self):
-        loading = LoadingPopup('Génération de la grille...')
+        loading = LoadingPopup('Génération...')
         loading.open()
 
         def gen_then_continue(dt):
@@ -644,7 +669,6 @@ class GameScreen(BoxLayout):
         self.cleanup()
         self.app.show_home()
 
-    # ----- Cellule -----
     def _cell_bg(self, r, c):
         sel = self.selected_cell
         val_here = self.current[r][c]
@@ -760,7 +784,6 @@ class GameScreen(BoxLayout):
         return all(self.current[r][c] == self.solution[r][c]
                    for r in range(9) for c in range(9))
 
-    # ----- Actions -----
     def undo(self):
         if self.paused or self.game_over or not self.history:
             return
@@ -801,9 +824,9 @@ class GameScreen(BoxLayout):
             return
         self.paused = not self.paused
         if self.paused:
-            self.pause_icon.text = '▶'
+            self.pause_icon.text = I.PLAY
         else:
-            self.pause_icon.text = '⏸'
+            self.pause_icon.text = I.PAUSE
             self.start_time = time.time() - self.elapsed
         self.grid._redraw()
 
@@ -843,7 +866,6 @@ class GameScreen(BoxLayout):
         if self._is_complete():
             self._game_won()
 
-    # ----- Pavé numérique -----
     def on_number_tap(self, num):
         if self.paused or self.game_over:
             return
@@ -854,7 +876,7 @@ class GameScreen(BoxLayout):
                 self.hold_number = num
                 self.selected_value = num
                 mode_txt = 'notes' if self.notes_mode else 'placement'
-                self.hold_label.text = f'Mode rapide ({mode_txt}) : {num}'
+                self.hold_label.text = 'Mode rapide ({}): {}'.format(mode_txt, num)
                 self._refresh_all()
         else:
             if self.selected_cell is not None:
@@ -877,7 +899,7 @@ class GameScreen(BoxLayout):
         self.hold_number = num
         self.selected_value = num
         mode_txt = 'notes' if self.notes_mode else 'placement'
-        self.hold_label.text = f'Mode rapide ({mode_txt}) : {num}'
+        self.hold_label.text = 'Mode rapide ({}): {}'.format(mode_txt, num)
         self._refresh_all()
 
     def _cancel_hold_mode(self):
@@ -886,10 +908,9 @@ class GameScreen(BoxLayout):
         self.hold_label.text = ''
         self._refresh_all()
 
-    # ----- Clavier (desktop) -----
     def _on_key_down(self, window, key, scancode, codepoint, modifier):
         if self.paused or self.game_over:
-            if key == 27:  # Escape
+            if key == 27:
                 self._cancel_hold_mode()
             return
         if codepoint and codepoint in '123456789':
@@ -906,22 +927,22 @@ class GameScreen(BoxLayout):
                     self._place(r, c, n)
                 self.selected_value = n
                 self._refresh_all()
-        elif key in (8, 46, 48):  # Backspace, Delete, 0
+        elif key in (8, 46, 48):
             if self.selected_cell:
                 r, c = self.selected_cell
                 if self.puzzle[r][c] == 0:
                     self._erase_cell(r, c)
                     self.selected_value = None
                     self._refresh_all()
-        elif key == 273:  # Up
+        elif key == 273:
             self._move(-1, 0)
-        elif key == 274:  # Down
+        elif key == 274:
             self._move(1, 0)
-        elif key == 275:  # Right
+        elif key == 275:
             self._move(0, 1)
-        elif key == 276:  # Left
+        elif key == 276:
             self._move(0, -1)
-        elif key == 27:   # Escape
+        elif key == 27:
             self._cancel_hold_mode()
         elif codepoint in ('n', 'N'):
             self.toggle_notes()
@@ -940,14 +961,12 @@ class GameScreen(BoxLayout):
         self.selected_value = v if v != 0 else None
         self.grid._redraw()
 
-    # ----- Refresh -----
     def _refresh_all(self):
-        self.err_label.text = f'Erreur: {self.errors}/{self.max_errors}'
+        self.err_label.text = 'Erreur: {}/{}'.format(self.errors, self.max_errors)
         if self.errors >= 2:
             self.err_label.color = T.DANGER
         else:
             self.err_label.color = T.TEXT_MUTED
-        # Compteurs des chiffres
         counts = {n: 9 for n in range(1, 10)}
         if self.current:
             for r in range(9):
@@ -967,9 +986,8 @@ class GameScreen(BoxLayout):
         if not self.paused:
             self.elapsed = int(time.time() - self.start_time)
         m, s = self.elapsed // 60, self.elapsed % 60
-        self.timer_label.text = f'{m:02d}:{s:02d}'
+        self.timer_label.text = '{:02d}:{:02d}'.format(m, s)
 
-    # ----- Fin de partie -----
     def _game_won(self):
         self.game_over = True
         self.app.record_game(self.difficulty, True, self.errors, self.elapsed)
@@ -981,9 +999,9 @@ class GameScreen(BoxLayout):
         m, s = self.elapsed // 60, self.elapsed % 60
         EndDialog(
             title='Bravo !',
-            subtitle=f'Résolu en {m:02d}:{s:02d}',
-            detail=f'{self.difficulty} · {self.errors}/3 erreur(s)',
-            color=T.SUCCESS, icon='🏆',
+            subtitle='Résolu en {:02d}:{:02d}'.format(m, s),
+            detail='{} - {}/3 erreur(s)'.format(self.difficulty, self.errors),
+            color=T.SUCCESS, icon=I.CHECK,
             on_close=self.app.show_home
         ).open()
 
@@ -999,7 +1017,7 @@ class GameScreen(BoxLayout):
             title='Partie perdue',
             subtitle='3 erreurs atteintes',
             detail="Revenez à l'accueil pour rejouer",
-            color=T.DANGER, icon='✕',
+            color=T.DANGER, icon=I.CROSS,
             on_close=self.app.show_home
         ).open()
 
@@ -1054,7 +1072,7 @@ class NumberButton(Widget):
             fg = T.TEXT_GREY
         else:
             fg = T.PRIMARY
-        lbl = Label(text=f'[b]{self.num}[/b]', markup=True,
+        lbl = Label(text='[b]{}[/b]'.format(self.num), markup=True,
                     color=fg, font_size=self.height * 0.5,
                     pos=self.pos, size=self.size,
                     halign='center', valign='middle')
@@ -1110,9 +1128,10 @@ class EndDialog(ModalView):
         super().__init__(size_hint=(None, None), size=(dp(280), dp(280)),
                          background_color=T.CARD, **kwargs)
         layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(8))
-        layout.add_widget(Label(text=icon, font_size=dp(40), color=color,
+        layout.add_widget(Label(text='[b]{}[/b]'.format(icon),
+                                markup=True, font_size=dp(40), color=color,
                                 size_hint_y=None, height=dp(60)))
-        layout.add_widget(Label(text=f'[b]{title}[/b]', markup=True,
+        layout.add_widget(Label(text='[b]{}[/b]'.format(title), markup=True,
                                 font_size=dp(20), color=color,
                                 size_hint_y=None, height=dp(28)))
         layout.add_widget(Label(text=subtitle, font_size=dp(12),
@@ -1152,33 +1171,32 @@ class HomeScreen(BoxLayout):
         # Top bar
         top = BoxLayout(size_hint_y=None, height=dp(50),
                         padding=[dp(20), dp(14), dp(20), 0])
-        gear = IconLabel(text='⚙', font_size=dp(22), color=T.TEXT_DARK,
+        gear = IconLabel(text=I.SETTINGS, font_size=dp(16), bold=True,
+                         color=T.TEXT_DARK,
                          on_press_cb=self.app.show_help,
-                         size_hint_x=None, width=dp(32))
+                         size_hint_x=None, width=dp(40))
         top.add_widget(gear)
         top.add_widget(Widget())
-        trophy = IconLabel(text='🏆', font_size=dp(20), color=T.TEXT_DARK,
+        trophy = IconLabel(text=I.TROPHY, font_size=dp(20), bold=True,
+                           color=T.TEXT_DARK,
                            on_press_cb=self.app.show_stats,
-                           size_hint_x=None, width=dp(32))
+                           size_hint_x=None, width=dp(40))
         top.add_widget(trophy)
         self.add_widget(top)
 
-        # Titre SUDOKU
-        title_box = AnchorLayout(size_hint_y=None, height=dp(80),
+        title_box = AnchorLayout(size_hint_y=None, height=dp(100),
                                  anchor_x='center', anchor_y='center')
         title_box.add_widget(Label(text='[b]SUDOKU[/b]', markup=True,
-                                   font_size=dp(38), color=T.TEXT_GREY))
+                                   font_size=dp(44), color=T.TEXT_GREY))
         self.add_widget(title_box)
 
         body = BoxLayout(orientation='vertical', padding=[dp(20), 0],
                          spacing=dp(8))
 
-        # Carte reprendre si dispo
         if self.app.saved_game:
             body.add_widget(self._build_resume_card())
 
-        # Panneau choix de niveau
-        lbl = Label(text='Choisir un niveau', font_size=dp(11),
+        lbl = Label(text='Choisir un niveau', font_size=dp(12),
                     color=T.TEXT_MUTED, bold=True,
                     size_hint_y=None, height=dp(20), halign='left')
         lbl.bind(size=lambda i, v: setattr(i, 'text_size', v))
@@ -1186,17 +1204,14 @@ class HomeScreen(BoxLayout):
 
         grid = GridLayout(cols=2, spacing=dp(8), size_hint_y=None)
         grid.bind(minimum_height=grid.setter('height'))
-        diffs = [('Facile', '🌱'), ('Moyen', '⚡'),
-                 ('Difficile', '🔥'), ('Expert', '💎')]
+        diffs = [('Facile', I.EASY), ('Moyen', I.MEDIUM),
+                 ('Difficile', I.HARD), ('Expert', I.EXPERT)]
         for diff, icon in diffs:
             grid.add_widget(self._build_diff_tile(diff, icon))
         body.add_widget(grid)
-
-        body.add_widget(Widget())  # spacer
-
+        body.add_widget(Widget())
         self.add_widget(body)
 
-        # Bouton "Nouvelle Partie" en bas
         bottom_btn_area = AnchorLayout(size_hint_y=None, height=dp(80),
                                        padding=[dp(20), 0, dp(20), dp(10)])
         new_btn = TappableBox(bg_color=T.CARD,
@@ -1210,7 +1225,6 @@ class HomeScreen(BoxLayout):
         bottom_btn_area.add_widget(new_btn)
         self.add_widget(bottom_btn_area)
 
-        # Bottom nav
         self.add_widget(self.app.build_bottom_nav('home'))
 
     def _build_resume_card(self):
@@ -1219,7 +1233,7 @@ class HomeScreen(BoxLayout):
         elapsed = sg.get('elapsed', 0)
         errors = sg.get('errors', 0)
         m, s = elapsed // 60, elapsed % 60
-        subtitle = f'{diff} · {m:02d}:{s:02d} · {errors}/3'
+        subtitle = '{} - {:02d}:{:02d} - {}/3'.format(diff, m, s, errors)
 
         card = TappableBox(bg_color=T.SUCCESS,
                            size_hint_y=None, height=dp(70),
@@ -1231,7 +1245,7 @@ class HomeScreen(BoxLayout):
         ic_bg = TappableBox(bg_color=T.TEXT_LIGHT,
                             size_hint=(None, None),
                             size=(dp(34), dp(34)), radius=dp(17))
-        ic_bg.add_widget(Label(text='▶', color=T.SUCCESS, bold=True,
+        ic_bg.add_widget(Label(text=I.PLAY, color=T.SUCCESS, bold=True,
                                font_size=dp(16)))
         play_icon.add_widget(ic_bg)
         card.add_widget(play_icon)
@@ -1248,7 +1262,7 @@ class HomeScreen(BoxLayout):
         txt.add_widget(t2)
         card.add_widget(txt)
 
-        close = IconLabel(text='✕', color=hex_to_rgba('#D8F5E5'),
+        close = IconLabel(text='X', color=hex_to_rgba('#D8F5E5'),
                           font_size=dp(13), bold=True,
                           size_hint_x=None, width=dp(28),
                           on_press_cb=self.app.discard_save)
@@ -1259,7 +1273,7 @@ class HomeScreen(BoxLayout):
         color = T.DIFF_COLORS[diff]
         stats = self.app.stats[diff]
         best = stats.get('best_time')
-        best_str = f"{best // 60:02d}:{best % 60:02d}" if best else "—"
+        best_str = '{:02d}:{:02d}'.format(best // 60, best % 60) if best else '-'
 
         tile = TappableBox(bg_color=T.CARD,
                            border_color=T.GRID_LINE,
@@ -1267,20 +1281,21 @@ class HomeScreen(BoxLayout):
                            padding=dp(12),
                            on_press_cb=lambda d=diff: self.app.start_new_game(d))
         inner = BoxLayout(orientation='vertical', spacing=dp(2))
-        ic = Label(text=icon, color=color, font_size=dp(16),
+        ic = Label(text='[b]{}[/b]'.format(icon), markup=True,
+                   color=color, font_size=dp(16),
                    size_hint_y=None, height=dp(20),
                    halign='left', valign='middle')
         ic.bind(size=lambda i, v: setattr(i, 'text_size', v))
         inner.add_widget(ic)
 
-        t = Label(text=f'[b]{diff}[/b]', markup=True,
+        t = Label(text='[b]{}[/b]'.format(diff), markup=True,
                   color=color, font_size=dp(13),
                   size_hint_y=None, height=dp(20),
                   halign='left', valign='middle')
         t.bind(size=lambda i, v: setattr(i, 'text_size', v))
         inner.add_widget(t)
 
-        sub = Label(text=f'🏆 {best_str}', font_size=dp(9),
+        sub = Label(text='Record: {}'.format(best_str), font_size=dp(9),
                     color=T.TEXT_MUTED,
                     size_hint_y=None, height=dp(16),
                     halign='left', valign='middle')
@@ -1307,7 +1322,7 @@ class DifficultyScreen(BoxLayout):
     def _build(self):
         top = BoxLayout(size_hint_y=None, height=dp(50),
                         padding=[dp(20), dp(14), dp(20), 0])
-        back = IconLabel(text='←', font_size=dp(22), color=T.TEXT_DARK,
+        back = IconLabel(text=I.BACK, font_size=dp(22), color=T.TEXT_DARK,
                          bold=True, on_press_cb=self.app.show_home,
                          size_hint_x=None, width=dp(40),
                          halign='left', valign='middle')
@@ -1344,14 +1359,13 @@ class DifficultyScreen(BoxLayout):
         color = T.DIFF_COLORS[diff]
         stats = self.app.stats[diff]
         best = stats.get('best_time')
-        best_str = f"Record: {best // 60:02d}:{best % 60:02d}" if best else "Pas de record"
+        best_str = 'Record: {:02d}:{:02d}'.format(best // 60, best % 60) if best else 'Pas de record'
 
         card = TappableBox(bg_color=T.CARD,
                            border_color=T.GRID_LINE,
                            size_hint_y=None, height=dp(70),
                            padding=[0, 0],
                            on_press_cb=lambda d=diff: self.app.start_new_game(d))
-        # Barre colorée à gauche
         bar = Widget(size_hint_x=None, width=dp(6))
         with bar.canvas:
             Color(*color)
@@ -1365,7 +1379,7 @@ class DifficultyScreen(BoxLayout):
         inner = BoxLayout(orientation='vertical',
                           padding=[dp(14), dp(10)])
         l1 = BoxLayout(size_hint_y=None, height=dp(24))
-        t1 = Label(text=f'[b]{diff}[/b]', markup=True,
+        t1 = Label(text='[b]{}[/b]'.format(diff), markup=True,
                    color=color, font_size=dp(14),
                    halign='left', valign='middle')
         t1.bind(size=lambda i, v: setattr(i, 'text_size', v))
@@ -1390,7 +1404,6 @@ class StatsScreen(BoxLayout):
     def __init__(self, app, **kwargs):
         super().__init__(orientation='vertical', **kwargs)
         self.app = app
-        self.current_tab = 'Facile'
         with self.canvas.before:
             Color(*T.BG)
             self._bg = Rectangle(pos=self.pos, size=self.size)
@@ -1404,7 +1417,7 @@ class StatsScreen(BoxLayout):
     def _build(self):
         top = BoxLayout(size_hint_y=None, height=dp(50),
                         padding=[dp(20), dp(14), dp(20), 0])
-        back = IconLabel(text='←', font_size=dp(22), color=T.TEXT_DARK,
+        back = IconLabel(text=I.BACK, font_size=dp(22), color=T.TEXT_DARK,
                          bold=True, on_press_cb=self.app.show_home,
                          size_hint_x=None, width=dp(40),
                          halign='left', valign='middle')
@@ -1417,7 +1430,6 @@ class StatsScreen(BoxLayout):
                               font_size=dp(22), color=T.TEXT_DARK,
                               size_hint_y=None, height=dp(40)))
 
-        # Tabs
         self.tabs_box = BoxLayout(size_hint_y=None, height=dp(36),
                                   padding=[dp(20), 0], spacing=dp(4))
         self.tab_buttons = {}
@@ -1442,7 +1454,6 @@ class StatsScreen(BoxLayout):
         self.add_widget(self.app.build_bottom_nav('stats'))
 
     def _show_tab(self, diff):
-        self.current_tab = diff
         for d, btn in self.tab_buttons.items():
             if d == diff:
                 btn.bg_color = T.DIFF_COLORS[d]
@@ -1463,43 +1474,43 @@ class StatsScreen(BoxLayout):
         color = T.DIFF_COLORS[diff]
 
         hdr = TappableBox(bg_color=color, size_hint_y=None, height=dp(40))
-        hdr.add_widget(Label(text=f'[b]Niveau {diff}[/b]', markup=True,
+        hdr.add_widget(Label(text='[b]Niveau {}[/b]'.format(diff), markup=True,
                              color=T.TEXT_LIGHT, font_size=dp(14)))
         self.content.add_widget(hdr)
 
-        fmt_time = lambda t: f'{int(t) // 60:02d}:{int(t) % 60:02d}' if t else '—'
+        def fmt_time(t):
+            if t:
+                return '{:02d}:{:02d}'.format(int(t) // 60, int(t) % 60)
+            return '-'
 
         grid = GridLayout(cols=2, spacing=dp(8), size_hint_y=None)
         grid.bind(minimum_height=grid.setter('height'))
-        grid.add_widget(self._stat_card('Parties', str(played), '🎮', color))
-        grid.add_widget(self._stat_card('Gagnées', str(won), '✓', color,
-                                        f'{win_rate:.0f}% réussite' if played else ''))
-        grid.add_widget(self._stat_card('Sans erreur', str(won_ne), '⭐', color,
-                                        f'{(won_ne / won * 100):.0f}% des gains' if won else ''))
-        grid.add_widget(self._stat_card('Temps moyen', fmt_time(avg), '⏱', color))
+        grid.add_widget(self._stat_card('Parties', str(played), color))
+        grid.add_widget(self._stat_card('Gagnées', str(won), color,
+                                        '{:.0f}% réussite'.format(win_rate) if played else ''))
+        grid.add_widget(self._stat_card('Sans erreur', str(won_ne), color,
+                                        '{:.0f}% des gains'.format(won_ne / won * 100) if won else ''))
+        grid.add_widget(self._stat_card('Temps moyen', fmt_time(avg), color))
         self.content.add_widget(grid)
 
-        best_card = self._stat_card('Meilleur temps', fmt_time(best), '🏆',
-                                    color, big=True)
+        best_card = self._stat_card('Meilleur temps', fmt_time(best), color, big=True)
         best_card.size_hint_y = None
         best_card.height = dp(100)
         self.content.add_widget(best_card)
         self.content.add_widget(Widget())
 
-    def _stat_card(self, label, value, icon, color, sub='', big=False):
+    def _stat_card(self, label, value, color, sub='', big=False):
         card = TappableBox(bg_color=T.CARD,
                            border_color=T.GRID_LINE,
                            size_hint_y=None, height=dp(100),
                            padding=dp(8))
         inner = BoxLayout(orientation='vertical')
-        inner.add_widget(Label(text=icon, color=color, font_size=dp(16),
-                               size_hint_y=None, height=dp(20)))
-        inner.add_widget(Label(text=f'[b]{value}[/b]', markup=True,
-                               color=T.TEXT_DARK, font_size=dp(18 if big else 16),
-                               size_hint_y=None, height=dp(28)))
+        inner.add_widget(Label(text='[b]{}[/b]'.format(value), markup=True,
+                               color=T.TEXT_DARK, font_size=dp(20 if big else 18),
+                               size_hint_y=None, height=dp(32)))
         inner.add_widget(Label(text=label, color=T.TEXT_MUTED,
-                               font_size=dp(9),
-                               size_hint_y=None, height=dp(16)))
+                               font_size=dp(10),
+                               size_hint_y=None, height=dp(18)))
         if sub:
             inner.add_widget(Label(text=sub, color=T.TEXT_MUTED,
                                    font_size=dp(8), italic=True,
@@ -1525,7 +1536,7 @@ class HelpScreen(BoxLayout):
     def _build(self):
         top = BoxLayout(size_hint_y=None, height=dp(50),
                         padding=[dp(20), dp(14), dp(20), 0])
-        back = IconLabel(text='←', font_size=dp(22), color=T.TEXT_DARK,
+        back = IconLabel(text=I.BACK, font_size=dp(22), color=T.TEXT_DARK,
                          bold=True, on_press_cb=self.app.show_home,
                          size_hint_x=None, width=dp(40),
                          halign='left', valign='middle')
@@ -1545,37 +1556,34 @@ class HelpScreen(BoxLayout):
         body.bind(minimum_height=body.setter('height'))
 
         rules = [
-            ('🎯', 'Objectif',
-             'Remplir la grille 9×9 pour que chaque ligne, colonne et carré 3×3 contienne tous les chiffres de 1 à 9.'),
-            ('✏️', 'Saisir',
+            ('Objectif',
+             'Remplir la grille 9x9 pour que chaque ligne, colonne et carré 3x3 contienne tous les chiffres de 1 à 9.'),
+            ('Saisir',
              'Touchez une case puis un chiffre du pavé.'),
-            ('📝', 'Notes',
+            ('Notes',
              'Activez Notes pour saisir des petits chiffres.'),
-            ('⌫', 'Effacer',
+            ('Effacer',
              'Efface la case sélectionnée.'),
-            ('↶', 'Annuler',
+            ('Annuler',
              'Reprend votre coup précédent.'),
-            ('⚡', 'Mode rapide',
+            ('Mode rapide',
              'Maintenez un chiffre pour le verrouiller.'),
-            ('⚠️', 'Erreurs',
+            ('Erreurs',
              '3 erreurs maximum. Chiffres incorrects en rouge.'),
         ]
-        for icon, title, text in rules:
+        for title, text in rules:
             card = TappableBox(bg_color=T.CARD,
                                border_color=T.GRID_LINE,
                                size_hint_y=None, height=dp(80),
-                               padding=dp(8))
-            ic = Label(text=icon, font_size=dp(18), color=T.PRIMARY,
-                       size_hint_x=None, width=dp(40))
-            card.add_widget(ic)
+                               padding=dp(10))
             txt = BoxLayout(orientation='vertical')
-            t1 = Label(text=f'[b]{title}[/b]', markup=True,
-                       font_size=dp(11), color=T.TEXT_DARK,
+            t1 = Label(text='[b]{}[/b]'.format(title), markup=True,
+                       font_size=dp(12), color=T.TEXT_DARK,
                        halign='left', valign='middle',
                        size_hint_y=None, height=dp(20))
             t1.bind(size=lambda i, v: setattr(i, 'text_size', v))
             txt.add_widget(t1)
-            t2 = Label(text=text, font_size=dp(9), color=T.TEXT_MUTED,
+            t2 = Label(text=text, font_size=dp(10), color=T.TEXT_MUTED,
                        halign='left', valign='top')
             t2.bind(size=lambda i, v: setattr(i, 'text_size', v))
             txt.add_widget(t2)
@@ -1619,7 +1627,6 @@ class SudokuApp(App):
         self.root_layout.clear_widgets()
         self.root_layout.add_widget(widget)
 
-    # ----- Navigation -----
     def show_home(self):
         if self.game_screen and not self.game_screen.game_over:
             self.game_screen.save_state()
@@ -1674,22 +1681,22 @@ class SudokuApp(App):
                 s['best_time'] = elapsed
         save_json(STATS_FILE, self.stats)
 
-    # ----- Bottom nav -----
     def build_bottom_nav(self, active):
         nav = TappableBox(bg_color=T.CARD,
                           border_color=T.GRID_LINE,
                           size_hint_y=None, height=dp(56),
                           padding=0)
         items = [
-            ('home', '🏠', 'Principal', self.show_home),
-            ('help', '❓', 'Règles', self.show_help),
-            ('stats', '📊', 'Stats', self.show_stats),
+            ('home', I.HOME, 'Principal', self.show_home),
+            ('help', I.HELP, 'Règles', self.show_help),
+            ('stats', I.STATS, 'Stats', self.show_stats),
         ]
         for key, icon, label, cmd in items:
             color = T.NAV_ACTIVE if key == active else T.NAV_INACTIVE
             item = TappableBox(bg_color=T.CARD, on_press_cb=cmd)
             inner = BoxLayout(orientation='vertical')
-            inner.add_widget(Label(text=icon, color=color, font_size=dp(16),
+            inner.add_widget(Label(text='[b]{}[/b]'.format(icon), markup=True,
+                                   color=color, font_size=dp(14),
                                    size_hint_y=None, height=dp(22)))
             inner.add_widget(Label(text=label, color=color, font_size=dp(9),
                                    bold=(key == active),
