@@ -10,6 +10,13 @@ import os
 import random
 import copy
 import time
+# Forcer la détection du tactile sur Android avant l'import de Kivy
+
+os.environ['KIVY_NO_ARGS'] = '1'
+
+# Pour permettre le scroll/touch sur les écrans
+from kivy.config import Config
+Config.set('kivy', 'log_level', 'warning')
 
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
