@@ -374,9 +374,20 @@ class ActionButton(ButtonBehavior, BoxLayout):
         self.icon_type = icon_type
         self.label_text = label_text
 
+        # Zone icone (dessin pur sur canvas)
         self.icon_area = Widget(size_hint_y=None, height=dp(30))
         self.add_widget(self.icon_area)
 
+        # Badge : Label statique cree une seule fois, par dessus l'icone
+        self.badge_label = Label(text='', font_size=dp(8), bold=True,
+                                 color=T.TEXT_LIGHT,
+                                 size_hint=(None, None),
+                                 size=(dp(32), dp(15)),
+                                 halign='center', valign='middle')
+        self.badge_label.bind(size=lambda i, v: setattr(i, 'text_size', v))
+        self.icon_area.add_widget(self.badge_label)
+
+        # Label texte du bouton
         self.label_widget = Label(text=label_text, font_size=dp(12),
                                   color=self.label_color,
                                   size_hint_y=None, height=dp(18),
@@ -384,7 +395,6 @@ class ActionButton(ButtonBehavior, BoxLayout):
         self.label_widget.bind(size=lambda i, v: setattr(i, 'text_size', v))
         self.add_widget(self.label_widget)
 
-        self._badge_label = None
         self.icon_area.bind(pos=self._redraw, size=self._redraw)
         self.bind(icon_type=self._redraw, icon_color=self._redraw,
                   label_text=self._update_label,
@@ -398,7 +408,7 @@ class ActionButton(ButtonBehavior, BoxLayout):
         self.label_widget.color = self.label_color
 
     def _redraw(self, *a):
-        self.icon_area.canvas.clear()
+        self.icon_area.canvas.before.clear()
         cx = self.icon_area.center_x
         cy = self.icon_area.center_y
         s = min(self.icon_area.width, self.icon_area.height)
@@ -407,7 +417,7 @@ class ActionButton(ButtonBehavior, BoxLayout):
         r = s * 0.4
         ic = self.icon_color
 
-        with self.icon_area.canvas:
+        with self.icon_area.canvas.before:
             Color(*ic)
             if self.icon_type == 'undo':
                 self._draw_undo(cx, cy, r)
@@ -418,39 +428,21 @@ class ActionButton(ButtonBehavior, BoxLayout):
             elif self.icon_type == 'bulb':
                 self._draw_bulb(cx, cy, r)
 
-        # Badge (label texte)
-        if self.badge_label_needed():
-            if self._badge_label is None:
-                self._badge_label = Label(font_size=dp(8), bold=True,
-                                          color=T.TEXT_LIGHT,
-                                          size_hint=(None, None),
-                                          size=(dp(34), dp(15)),
-                                          halign='center', valign='middle')
-                self.icon_area.add_widget(self._badge_label)
-            self._badge_label.text = self.badge_text
-            self._badge_label.text_size = self._badge_label.size
-            bx = cx + r * 0.5
-            by = cy + r * 0.6
-            self._badge_label.pos = (bx, by)
-            with self.icon_area.canvas:
+            # Badge dessine directement (rectangle + le Label affiche le texte)
+            if self.badge_text and self.badge_color[3] > 0:
+                bw, bh = dp(32), dp(15)
+                bx = cx + r * 0.45
+                by = cy + r * 0.55
                 Color(*self.badge_color)
-                RoundedRectangle(pos=(bx, by),
-                                 size=self._badge_label.size,
+                RoundedRectangle(pos=(bx, by), size=(bw, bh),
                                  radius=[(dp(7), dp(7))] * 4)
-            # Redessiner le texte par dessus : on le retire et remet en dernier
-            self.icon_area.remove_widget(self._badge_label)
-            self.icon_area.add_widget(self._badge_label)
-        else:
-            if self._badge_label is not None and self._badge_label in self.icon_area.children:
-                self.icon_area.remove_widget(self._badge_label)
-                self._badge_label = None
-
-    def badge_label_needed(self):
-        return bool(self.badge_text) and self.badge_color[3] > 0
+                self.badge_label.pos = (bx, by)
+                self.badge_label.text = self.badge_text
+            else:
+                self.badge_label.text = ''
 
     # --- dessins d'icones ---
     def _draw_undo(self, cx, cy, r):
-        # Fleche circulaire retour (arc + pointe)
         Line(circle=(cx + r * 0.1, cy, r * 0.85, 40, 300), width=dp(2))
         Triangle(points=[
             cx - r * 0.75, cy + r * 0.35,
@@ -458,7 +450,6 @@ class ActionButton(ButtonBehavior, BoxLayout):
             cx - r * 0.45, cy - r * 0.1])
 
     def _draw_erase(self, cx, cy, r):
-        # Gomme : parallelogramme incline
         p = [
             cx - r * 0.85, cy - r * 0.45,
             cx + r * 0.15, cy + r * 0.55,
@@ -467,13 +458,11 @@ class ActionButton(ButtonBehavior, BoxLayout):
         ]
         Triangle(points=[p[0], p[1], p[2], p[3], p[4], p[5]])
         Triangle(points=[p[0], p[1], p[4], p[5], p[6], p[7]])
-        # ligne mediane plus claire
         Color(*T.CARD)
         Line(points=[cx - r * 0.35, cy + r * 0.05,
                      cx + r * 0.5, cy - r * 0.45], width=dp(1.5))
 
     def _draw_pencil(self, cx, cy, r):
-        # Corps du crayon (parallelogramme diagonal)
         Triangle(points=[
             cx - r * 0.8, cy - r * 0.6,
             cx + r * 0.4, cy + r * 0.6,
@@ -482,14 +471,12 @@ class ActionButton(ButtonBehavior, BoxLayout):
             cx - r * 0.8, cy - r * 0.6,
             cx + r * 0.6, cy + r * 0.4,
             cx - r * 0.6, cy - r * 0.8])
-        # Pointe
         Triangle(points=[
             cx + r * 0.4, cy + r * 0.6,
             cx + r * 0.85, cy + r * 0.85,
             cx + r * 0.6, cy + r * 0.4])
 
     def _draw_bulb(self, cx, cy, r):
-        # Ampoule : bulbe rond + culot
         Ellipse(pos=(cx - r * 0.65, cy - r * 0.25),
                 size=(r * 1.3, r * 1.3))
         Color(*self.icon_color)
@@ -859,30 +846,38 @@ class GameScreen(BoxLayout):
         self.add_widget(self.hold_label)
 
     def _resize_grid(self, *a):
-        # hauteurs fixes : top 46, spacing 8*3, bottom_card 146, hold 16, padding 18
-        reserved = dp(46 + 24 + 146 + 16 + 18 + 12)
-        available_w = Window.width - dp(20) - dp(12)
-        available_h = Window.height - reserved
-        size = min(available_w, available_h)
-        size = max(size, dp(260))
-        cell = int(size / 9)
-        size = cell * 9
-        self.grid.size = (size, size)
-        self.grid_card.height = size + dp(12)
-        self.grid._redraw()
+        try:
+            # hauteurs fixes : top 46, spacing 8*3, bottom_card 146, hold 16, padding 18
+            reserved = dp(46 + 24 + 146 + 16 + 18 + 12)
+            available_w = Window.width - dp(20) - dp(12)
+            available_h = Window.height - reserved
+            size = min(available_w, available_h)
+            size = max(size, dp(260))
+            cell = int(size / 9)
+            size = cell * 9
+            self.grid.size = (size, size)
+            self.grid_card.height = size + dp(12)
+            self.grid._redraw()
+        except Exception:
+            pass
 
     def _generate_new(self):
         loading = LoadingPopup('Generation...')
         loading.open()
 
         def gen_then_continue(dt):
-            self.puzzle, self.solution = SudokuGenerator().generate(self.difficulty)
-            self.current = copy.deepcopy(self.puzzle)
-            self.notes = [[set() for _ in range(9)] for _ in range(9)]
-            self.start_time = time.time()
-            self.elapsed = 0
-            loading.dismiss()
-            self._refresh_all()
+            try:
+                self.puzzle, self.solution = SudokuGenerator().generate(self.difficulty)
+                self.current = copy.deepcopy(self.puzzle)
+                self.notes = [[set() for _ in range(9)] for _ in range(9)]
+                self.start_time = time.time()
+                self.elapsed = 0
+                loading.dismiss()
+                self._refresh_all()
+            except Exception:
+                loading.dismiss()
+                import traceback
+                self.app._show_error(traceback.format_exc())
 
         Clock.schedule_once(gen_then_continue, 0.1)
 
@@ -1258,10 +1253,9 @@ class GameScreen(BoxLayout):
 class BasePopup(ModalView):
     """Popup avec fond blanc force et coins arrondis"""
     def __init__(self, **kwargs):
-        kwargs.setdefault('background', '')
         kwargs.setdefault('background_color', (0, 0, 0, 0.45))
-        kwargs.setdefault('overlay_color', (0, 0, 0, 0.45))
         super().__init__(**kwargs)
+        # Dessine une carte blanche par-dessus le fond transparent du ModalView
         with self.canvas.before:
             self._card_color = Color(*T.CARD)
             self._card = RoundedRectangle(pos=self.pos, size=self.size,
@@ -1362,6 +1356,30 @@ class HintDialog(BasePopup):
             ok_btn.bind(on_release=lambda b: self.dismiss())
             btns.add_widget(ok_btn)
         layout.add_widget(btns)
+        self.add_widget(layout)
+
+
+class ErrorDialog(BasePopup):
+    """Affiche un message d'erreur (pour diagnostic)"""
+    def __init__(self, message, on_close, **kwargs):
+        super().__init__(size_hint=(0.92, 0.7), auto_dismiss=False, **kwargs)
+        layout = BoxLayout(orientation='vertical', padding=dp(18), spacing=dp(10))
+        layout.add_widget(Label(text='[b]Erreur[/b]', markup=True,
+                                font_size=dp(18), color=T.DANGER,
+                                size_hint_y=None, height=dp(34)))
+        scroll = ScrollView()
+        lbl = Label(text=message, font_size=dp(10), color=T.TEXT_DARK,
+                    halign='left', valign='top', size_hint_y=None)
+        lbl.bind(width=lambda i, v: setattr(i, 'text_size', (v, None)))
+        lbl.bind(texture_size=lambda i, v: setattr(i, 'height', v[1]))
+        scroll.add_widget(lbl)
+        layout.add_widget(scroll)
+        btn = FlatButton(text='Retour', font_size=dp(13), bold=True,
+                         bg_color=T.PRIMARY, border_color=T.PRIMARY,
+                         text_color=T.TEXT_LIGHT,
+                         size_hint_y=None, height=dp(46), radius=dp(14))
+        btn.bind(on_release=lambda b: (self.dismiss(), on_close()))
+        layout.add_widget(btn)
         self.add_widget(layout)
 
 
@@ -1782,15 +1800,27 @@ class SudokuApp(App):
         except Exception:
             pass
         self.saved_game = None
-        self.game_screen = GameScreen(self, difficulty)
-        self._show(self.game_screen)
+        try:
+            self.game_screen = GameScreen(self, difficulty)
+            self._show(self.game_screen)
+        except Exception:
+            import traceback
+            self._show_error(traceback.format_exc())
 
     def resume_game(self):
         if not self.saved_game:
             return
-        self.game_screen = GameScreen(self, self.saved_game['difficulty'],
-                                      resume_data=self.saved_game)
-        self._show(self.game_screen)
+        try:
+            self.game_screen = GameScreen(self, self.saved_game['difficulty'],
+                                          resume_data=self.saved_game)
+            self._show(self.game_screen)
+        except Exception:
+            import traceback
+            self._show_error(traceback.format_exc())
+
+    def _show_error(self, msg):
+        """Affiche une erreur a l'ecran au lieu de crasher silencieusement"""
+        ErrorDialog(msg, on_close=self.show_home).open()
 
     def discard_save(self):
         try:
