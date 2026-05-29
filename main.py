@@ -1,8 +1,10 @@
 """
 Sudoku — Application Android (Kivy)
-- Grille pleine taille
-- Boutons d'action en icones dessinees (style mobile)
-- Astuces intelligentes 2/partie
+Version epuree :
+- Popups fond clair, texte lisible
+- Surlignage corrige (reset au changement)
+- Icones d'action dessinees (gomme, crayon, ampoule, fleche)
+- Layout type carte arrondie, tailles coherentes
 """
 
 import json
@@ -109,7 +111,7 @@ def default_stats():
 
 
 # ============================================================
-#  GÉNÉRATEUR
+#  GENERATEUR
 # ============================================================
 class SudokuGenerator:
     def is_valid(self, g, r, c, n):
@@ -326,7 +328,7 @@ class FlatButton(Button):
 class Card(BoxLayout):
     bg_color = ListProperty(T.CARD)
     border_color = ListProperty(T.GRID_LINE)
-    radius = NumericProperty(dp(10))
+    radius = NumericProperty(dp(14))
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -357,35 +359,32 @@ class Card(BoxLayout):
 
 
 # ============================================================
-#  BOUTON ACTION (icône dessinée + label, sans bordure)
+#  BOUTON ACTION (icone dessinee + label, sans bordure)
 # ============================================================
 class ActionButton(ButtonBehavior, BoxLayout):
-    """Bouton action style mobile : icône dessinée au-dessus + label
-       Pas de bordure rectangulaire, juste icône + texte"""
     icon_type = StringProperty('undo')
     label_text = StringProperty('')
     icon_color = ListProperty(T.TEXT_DARK)
     label_color = ListProperty(T.TEXT_MUTED)
     badge_text = StringProperty('')
     badge_color = ListProperty([0, 0, 0, 0])
-    badge_text_color = ListProperty(T.TEXT_LIGHT)
 
     def __init__(self, icon_type='undo', label_text='', **kwargs):
-        super().__init__(orientation='vertical', spacing=dp(2), **kwargs)
+        super().__init__(orientation='vertical', spacing=dp(3), **kwargs)
         self.icon_type = icon_type
         self.label_text = label_text
 
-        # Zone icône (haut)
-        self.icon_area = Widget(size_hint_y=None, height=dp(34))
+        self.icon_area = Widget(size_hint_y=None, height=dp(30))
         self.add_widget(self.icon_area)
 
-        # Label (bas)
-        self.label_widget = Label(text=label_text, font_size=dp(11),
+        self.label_widget = Label(text=label_text, font_size=dp(12),
                                   color=self.label_color,
                                   size_hint_y=None, height=dp(18),
-                                  halign='center', valign='top')
+                                  halign='center', valign='middle')
+        self.label_widget.bind(size=lambda i, v: setattr(i, 'text_size', v))
         self.add_widget(self.label_widget)
 
+        self._badge_label = None
         self.icon_area.bind(pos=self._redraw, size=self._redraw)
         self.bind(icon_type=self._redraw, icon_color=self._redraw,
                   label_text=self._update_label,
@@ -405,197 +404,99 @@ class ActionButton(ButtonBehavior, BoxLayout):
         s = min(self.icon_area.width, self.icon_area.height)
         if s <= 0:
             return
-        half = s * 0.35
+        r = s * 0.4
         ic = self.icon_color
 
         with self.icon_area.canvas:
             Color(*ic)
             if self.icon_type == 'undo':
-                self._draw_undo(cx, cy, half)
+                self._draw_undo(cx, cy, r)
             elif self.icon_type == 'erase':
-                self._draw_erase(cx, cy, half)
+                self._draw_erase(cx, cy, r)
             elif self.icon_type == 'pencil':
-                self._draw_pencil(cx, cy, half)
+                self._draw_pencil(cx, cy, r)
             elif self.icon_type == 'bulb':
-                self._draw_bulb(cx, cy, half)
-            elif self.icon_type == 'pause':
-                self._draw_pause(cx, cy, half)
-            elif self.icon_type == 'play':
-                self._draw_play(cx, cy, half)
-            elif self.icon_type == 'arrow_left':
-                self._draw_arrow_left(cx, cy, half)
-            elif self.icon_type == 'home':
-                self._draw_home(cx, cy, half)
-            elif self.icon_type == 'help':
-                self._draw_help(cx, cy, half)
-            elif self.icon_type == 'trophy':
-                self._draw_trophy(cx, cy, half)
+                self._draw_bulb(cx, cy, r)
 
-            # Badge en haut à droite
-            if self.badge_text:
-                Color(*self.badge_color)
-                bw = dp(22)
-                bh = dp(14)
-                bx = cx + half - dp(6)
-                by = cy + half + dp(2)
-                RoundedRectangle(pos=(bx, by), size=(bw, bh),
-                                 radius=[(dp(6), dp(6))] * 4)
-
-        # Le texte du badge est un Label séparé (pour le rendu)
-        if self.badge_text:
-            # On retire l'ancien et on rajoute
-            if hasattr(self, '_badge_label') and self._badge_label in self.icon_area.children:
-                self.icon_area.remove_widget(self._badge_label)
-            self._badge_label = Label(
-                text=self.badge_text, font_size=dp(8), bold=True,
-                color=self.badge_text_color,
-                size_hint=(None, None),
-                size=(dp(22), dp(14)),
-                pos=(cx + half - dp(6), cy + half + dp(2)),
-                halign='center', valign='middle')
+        # Badge (label texte)
+        if self.badge_label_needed():
+            if self._badge_label is None:
+                self._badge_label = Label(font_size=dp(8), bold=True,
+                                          color=T.TEXT_LIGHT,
+                                          size_hint=(None, None),
+                                          size=(dp(34), dp(15)),
+                                          halign='center', valign='middle')
+                self.icon_area.add_widget(self._badge_label)
+            self._badge_label.text = self.badge_text
             self._badge_label.text_size = self._badge_label.size
+            bx = cx + r * 0.5
+            by = cy + r * 0.6
+            self._badge_label.pos = (bx, by)
+            with self.icon_area.canvas:
+                Color(*self.badge_color)
+                RoundedRectangle(pos=(bx, by),
+                                 size=self._badge_label.size,
+                                 radius=[(dp(7), dp(7))] * 4)
+            # Redessiner le texte par dessus : on le retire et remet en dernier
+            self.icon_area.remove_widget(self._badge_label)
             self.icon_area.add_widget(self._badge_label)
         else:
-            if hasattr(self, '_badge_label') and self._badge_label in self.icon_area.children:
+            if self._badge_label is not None and self._badge_label in self.icon_area.children:
                 self.icon_area.remove_widget(self._badge_label)
+                self._badge_label = None
 
+    def badge_label_needed(self):
+        return bool(self.badge_text) and self.badge_color[3] > 0
+
+    # --- dessins d'icones ---
     def _draw_undo(self, cx, cy, r):
-        # Flèche retour : arc de cercle avec pointe
-        Line(circle=(cx, cy, r * 0.8, 90, 320), width=1.8)
-        # Pointe de flèche
-        Color(*self.icon_color)
+        # Fleche circulaire retour (arc + pointe)
+        Line(circle=(cx + r * 0.1, cy, r * 0.85, 40, 300), width=dp(2))
         Triangle(points=[
-            cx - r * 0.8, cy + r * 0.2,
-            cx - r * 0.5, cy + r * 0.6,
-            cx - r * 0.4, cy + r * 0.0
-        ])
+            cx - r * 0.75, cy + r * 0.35,
+            cx - r * 0.2, cy + r * 0.55,
+            cx - r * 0.45, cy - r * 0.1])
 
     def _draw_erase(self, cx, cy, r):
-        # Gomme : rectangle incliné
-        Color(*self.icon_color)
-        # Forme losange (gomme vue de biais)
-        Triangle(points=[cx - r * 0.9, cy - r * 0.3,
-                         cx + r * 0.3, cy + r * 0.9,
-                         cx + r * 0.6, cy + r * 0.5])
-        Triangle(points=[cx - r * 0.9, cy - r * 0.3,
-                         cx + r * 0.6, cy + r * 0.5,
-                         cx - r * 0.6, cy - r * 0.7])
-        Triangle(points=[cx - r * 0.6, cy - r * 0.7,
-                         cx + r * 0.6, cy + r * 0.5,
-                         cx + r * 0.9, cy + r * 0.1])
-        Triangle(points=[cx - r * 0.6, cy - r * 0.7,
-                         cx + r * 0.9, cy + r * 0.1,
-                         cx + r * 0.3, cy - r * 1.1])
-        # Ligne séparatrice
+        # Gomme : parallelogramme incline
+        p = [
+            cx - r * 0.85, cy - r * 0.45,
+            cx + r * 0.15, cy + r * 0.55,
+            cx + r * 0.85, cy + r * 0.05,
+            cx - r * 0.15, cy - r * 0.95
+        ]
+        Triangle(points=[p[0], p[1], p[2], p[3], p[4], p[5]])
+        Triangle(points=[p[0], p[1], p[4], p[5], p[6], p[7]])
+        # ligne mediane plus claire
         Color(*T.CARD)
-        Line(points=[cx - r * 0.2, cy + r * 0.4,
-                     cx + r * 0.7, cy - r * 0.5], width=1.5)
+        Line(points=[cx - r * 0.35, cy + r * 0.05,
+                     cx + r * 0.5, cy - r * 0.45], width=dp(1.5))
 
     def _draw_pencil(self, cx, cy, r):
-        # Crayon incliné
-        Color(*self.icon_color)
-        # Corps du crayon (parallélogramme)
-        Triangle(points=[cx - r * 0.7, cy - r * 0.7,
-                         cx + r * 0.3, cy + r * 0.3,
-                         cx + r * 0.5, cy + r * 0.1])
-        Triangle(points=[cx - r * 0.7, cy - r * 0.7,
-                         cx + r * 0.5, cy + r * 0.1,
-                         cx - r * 0.5, cy - r * 0.9])
-        # Pointe (triangle vers haut-droite)
-        Triangle(points=[cx + r * 0.3, cy + r * 0.3,
-                         cx + r * 0.8, cy + r * 0.8,
-                         cx + r * 0.5, cy + r * 0.1])
-        # Embout gomme (carré au bas)
-        Color(*T.WARNING)
-        Triangle(points=[cx - r * 0.7, cy - r * 0.7,
-                         cx - r * 0.5, cy - r * 0.9,
-                         cx - r * 0.9, cy - r * 0.5])
-        Triangle(points=[cx - r * 0.7, cy - r * 0.7,
-                         cx - r * 0.9, cy - r * 0.5,
-                         cx - r * 1.0, cy - r * 0.7])
+        # Corps du crayon (parallelogramme diagonal)
+        Triangle(points=[
+            cx - r * 0.8, cy - r * 0.6,
+            cx + r * 0.4, cy + r * 0.6,
+            cx + r * 0.6, cy + r * 0.4])
+        Triangle(points=[
+            cx - r * 0.8, cy - r * 0.6,
+            cx + r * 0.6, cy + r * 0.4,
+            cx - r * 0.6, cy - r * 0.8])
+        # Pointe
+        Triangle(points=[
+            cx + r * 0.4, cy + r * 0.6,
+            cx + r * 0.85, cy + r * 0.85,
+            cx + r * 0.6, cy + r * 0.4])
 
     def _draw_bulb(self, cx, cy, r):
-        # Ampoule : cercle + base
+        # Ampoule : bulbe rond + culot
+        Ellipse(pos=(cx - r * 0.65, cy - r * 0.25),
+                size=(r * 1.3, r * 1.3))
         Color(*self.icon_color)
-        # Le bulbe (cercle)
-        Ellipse(pos=(cx - r * 0.7, cy - r * 0.3),
-                size=(r * 1.4, r * 1.4))
-        # La base (petit rectangle)
-        Rectangle(pos=(cx - r * 0.3, cy - r * 0.9),
+        Rectangle(pos=(cx - r * 0.3, cy - r * 0.85),
                   size=(r * 0.6, r * 0.4))
-        # Petit pied
-        Rectangle(pos=(cx - r * 0.2, cy - r * 1.1),
-                  size=(r * 0.4, r * 0.2))
-
-    def _draw_pause(self, cx, cy, r):
-        # Deux barres verticales
-        Color(*self.icon_color)
-        Rectangle(pos=(cx - r * 0.5, cy - r * 0.6),
-                  size=(r * 0.3, r * 1.2))
-        Rectangle(pos=(cx + r * 0.2, cy - r * 0.6),
-                  size=(r * 0.3, r * 1.2))
-
-    def _draw_play(self, cx, cy, r):
-        # Triangle pointant à droite
-        Color(*self.icon_color)
-        Triangle(points=[cx - r * 0.4, cy - r * 0.7,
-                         cx - r * 0.4, cy + r * 0.7,
-                         cx + r * 0.7, cy])
-
-    def _draw_arrow_left(self, cx, cy, r):
-        # Flèche gauche
-        Color(*self.icon_color)
-        Triangle(points=[cx - r * 0.7, cy,
-                         cx + r * 0.1, cy + r * 0.6,
-                         cx + r * 0.1, cy - r * 0.6])
-        Rectangle(pos=(cx + r * 0.1, cy - r * 0.15),
-                  size=(r * 0.6, r * 0.3))
-
-    def _draw_home(self, cx, cy, r):
-        # Maison : toit triangle + base rectangle
-        Color(*self.icon_color)
-        # Toit
-        Triangle(points=[cx, cy + r * 0.9,
-                         cx - r * 0.9, cy + r * 0.1,
-                         cx + r * 0.9, cy + r * 0.1])
-        # Base
-        Rectangle(pos=(cx - r * 0.7, cy - r * 0.8),
-                  size=(r * 1.4, r * 0.9))
-        # Porte
-        Color(*T.BG)
-        Rectangle(pos=(cx - r * 0.2, cy - r * 0.8),
-                  size=(r * 0.4, r * 0.5))
-
-    def _draw_help(self, cx, cy, r):
-        # Cercle vide avec ? — texte rendu via label séparé
-        Line(circle=(cx, cy, r * 0.9), width=1.8)
-        if not hasattr(self, '_help_q'):
-            self._help_q = Label(text='?', font_size=r * 1.4, bold=True,
-                                 color=self.icon_color,
-                                 size_hint=(None, None),
-                                 size=(r * 2, r * 2),
-                                 pos=(cx - r, cy - r))
-            self.icon_area.add_widget(self._help_q)
-        else:
-            self._help_q.pos = (cx - r, cy - r)
-            self._help_q.color = self.icon_color
-
-    def _draw_trophy(self, cx, cy, r):
-        # Trophée stylisé
-        Color(*self.icon_color)
-        # Coupe (trapèze approché par triangles)
-        Triangle(points=[cx - r * 0.6, cy + r * 0.7,
-                         cx + r * 0.6, cy + r * 0.7,
-                         cx + r * 0.4, cy - r * 0.2])
-        Triangle(points=[cx - r * 0.6, cy + r * 0.7,
-                         cx + r * 0.4, cy - r * 0.2,
-                         cx - r * 0.4, cy - r * 0.2])
-        # Pied
-        Rectangle(pos=(cx - r * 0.15, cy - r * 0.6),
-                  size=(r * 0.3, r * 0.4))
-        # Base
-        Rectangle(pos=(cx - r * 0.5, cy - r * 0.9),
-                  size=(r * 1.0, r * 0.2))
+        Rectangle(pos=(cx - r * 0.18, cy - r * 1.05),
+                  size=(r * 0.36, r * 0.18))
 
 
 # ============================================================
@@ -777,7 +678,7 @@ class NumberButton(ButtonBehavior, Widget):
 
 
 # ============================================================
-#  ÉCRAN DE JEU
+#  ECRAN DE JEU
 # ============================================================
 class GameScreen(BoxLayout):
     def __init__(self, app, difficulty, resume_data=None, **kwargs):
@@ -833,50 +734,42 @@ class GameScreen(BoxLayout):
         instance.text_size = instance.size
 
     def _build_ui(self):
-        # ====== Top bar ======
-        top = BoxLayout(size_hint_y=None, height=dp(48),
-                        padding=[dp(10), dp(6), dp(10), 0], spacing=dp(6))
+        self.padding = [dp(10), dp(8), dp(10), dp(10)]
+        self.spacing = dp(8)
 
-        back_btn = FlatButton(text='', font_size=dp(20), bold=True,
-                              bg_color=T.CARD, border_color=T.GRID_LINE,
-                              text_color=T.TEXT_DARK,
-                              size_hint_x=None, width=dp(46))
-        # On dessine la flèche dessus
-        with back_btn.canvas.after:
-            back_btn._arrow_col = Color(*T.TEXT_DARK)
+        # ====== Top bar ======
+        top = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(8))
+
+        back_btn = FlatButton(text='', bg_color=T.CARD,
+                              border_color=T.GRID_LINE,
+                              size_hint_x=None, width=dp(50))
         def draw_back_arrow(*a, b=back_btn):
             b.canvas.after.clear()
             with b.canvas.after:
                 Color(*T.TEXT_DARK)
-                cx = b.center_x
-                cy = b.center_y
+                cx, cy = b.center_x, b.center_y
                 Triangle(points=[cx - dp(7), cy,
                                  cx + dp(2), cy + dp(7),
                                  cx + dp(2), cy - dp(7)])
-                Rectangle(pos=(cx + dp(2), cy - dp(1.5)),
-                          size=(dp(8), dp(3)))
+                Rectangle(pos=(cx + dp(1), cy - dp(2)), size=(dp(8), dp(4)))
         back_btn.bind(pos=draw_back_arrow, size=draw_back_arrow)
         back_btn.bind(on_release=lambda b: self.go_home())
         top.add_widget(back_btn)
 
-        center_info = BoxLayout(orientation='vertical', spacing=dp(2))
-        self.diff_label = Label(text=self.difficulty,
-                                font_size=dp(10),
+        center_info = BoxLayout(orientation='vertical')
+        self.diff_label = Label(text=self.difficulty, font_size=dp(12),
                                 color=T.TEXT_MUTED,
                                 halign='center', valign='middle')
         self.diff_label.bind(size=self._fix_label)
         center_info.add_widget(self.diff_label)
 
-        info_row = BoxLayout(spacing=dp(8))
-        self.err_label = Label(text='Erreur: 0/3',
-                               font_size=dp(11), bold=True,
+        info_row = BoxLayout(spacing=dp(12))
+        self.err_label = Label(text='Erreur: 0/3', font_size=dp(13), bold=True,
                                color=T.TEXT_MUTED,
                                halign='center', valign='middle')
         self.err_label.bind(size=self._fix_label)
         info_row.add_widget(self.err_label)
-
-        self.timer_label = Label(text='00:00',
-                                 font_size=dp(11), bold=True,
+        self.timer_label = Label(text='00:00', font_size=dp(13), bold=True,
                                  color=T.TEXT_MUTED,
                                  halign='center', valign='middle')
         self.timer_label.bind(size=self._fix_label)
@@ -884,51 +777,49 @@ class GameScreen(BoxLayout):
         center_info.add_widget(info_row)
         top.add_widget(center_info)
 
-        self.pause_btn = FlatButton(text='', font_size=dp(16), bold=True,
-                                    bg_color=T.CARD, border_color=T.PRIMARY,
-                                    text_color=T.PRIMARY,
-                                    size_hint_x=None, width=dp(46))
+        self.pause_btn = FlatButton(text='', bg_color=T.CARD,
+                                    border_color=T.PRIMARY,
+                                    size_hint_x=None, width=dp(50))
         self._pause_state = 'pause'
         def draw_pause_icon(*a, b=self.pause_btn):
             b.canvas.after.clear()
             with b.canvas.after:
                 Color(*T.PRIMARY)
-                cx = b.center_x
-                cy = b.center_y
+                cx, cy = b.center_x, b.center_y
                 if self._pause_state == 'pause':
-                    # Deux barres
-                    Rectangle(pos=(cx - dp(5), cy - dp(6)),
-                              size=(dp(3), dp(12)))
-                    Rectangle(pos=(cx + dp(2), cy - dp(6)),
-                              size=(dp(3), dp(12)))
+                    Rectangle(pos=(cx - dp(6), cy - dp(7)), size=(dp(4), dp(14)))
+                    Rectangle(pos=(cx + dp(2), cy - dp(7)), size=(dp(4), dp(14)))
                 else:
-                    # Triangle play
-                    Triangle(points=[cx - dp(4), cy - dp(7),
-                                     cx - dp(4), cy + dp(7),
-                                     cx + dp(6), cy])
+                    Triangle(points=[cx - dp(5), cy - dp(7),
+                                     cx - dp(5), cy + dp(7),
+                                     cx + dp(7), cy])
         self.pause_btn.bind(pos=draw_pause_icon, size=draw_pause_icon)
         self.pause_btn.bind(on_release=lambda b: self.toggle_pause())
         self._draw_pause_icon = draw_pause_icon
         top.add_widget(self.pause_btn)
-
         self.add_widget(top)
 
-        # ====== Grille ======
-        self.grid_anchor = AnchorLayout(
-            anchor_x='center', anchor_y='center',
-            padding=[dp(4), dp(4)])
+        # ====== Grille (dans une carte) ======
+        self.grid_card = Card(bg_color=T.CARD, border_color=T.GRID_LINE,
+                              size_hint_y=None, padding=dp(6))
+        grid_anchor = AnchorLayout(anchor_x='center', anchor_y='center')
         self.grid = SudokuGrid(self, size_hint=(None, None))
-        self.grid_anchor.add_widget(self.grid)
-        self.add_widget(self.grid_anchor)
+        grid_anchor.add_widget(self.grid)
+        self.grid_card.add_widget(grid_anchor)
+        self.add_widget(self.grid_card)
 
         Window.bind(size=self._resize_grid)
         Clock.schedule_once(lambda dt: self._resize_grid(), 0.01)
         Clock.schedule_once(lambda dt: self._resize_grid(), 0.2)
 
-        # ====== Boutons d'action (style icône dessinée + label) ======
-        actions = BoxLayout(size_hint_y=None, height=dp(60),
-                            padding=[dp(10), dp(2)], spacing=dp(4))
+        # ====== Carte boutons + pave ======
+        bottom_card = Card(bg_color=T.CARD, border_color=T.GRID_LINE,
+                           size_hint_y=None, height=dp(146),
+                           orientation='vertical',
+                           padding=[dp(8), dp(10)], spacing=dp(8))
 
+        # Boutons d'action
+        actions = BoxLayout(size_hint_y=None, height=dp(56), spacing=dp(2))
         self.undo_btn = ActionButton(icon_type='undo', label_text='Annuler')
         self.undo_btn.bind(on_release=lambda b: self.undo())
         actions.add_widget(self.undo_btn)
@@ -948,34 +839,36 @@ class GameScreen(BoxLayout):
                                      badge_color=T.WARNING)
         self.hint_btn.bind(on_release=lambda b: self.use_hint())
         actions.add_widget(self.hint_btn)
+        bottom_card.add_widget(actions)
 
-        self.add_widget(actions)
-
-        # ====== Pavé numérique ======
-        nums = BoxLayout(size_hint_y=None, height=dp(54),
-                         padding=[dp(8), dp(2)], spacing=dp(3))
+        # Pave numerique
+        nums = BoxLayout(size_hint_y=None, height=dp(52), spacing=dp(2))
         self.num_buttons = {}
         for i in range(1, 10):
             wrap = NumberButton(num=i, game=self)
             nums.add_widget(wrap)
             self.num_buttons[i] = wrap
-        self.add_widget(nums)
+        bottom_card.add_widget(nums)
+
+        self.add_widget(bottom_card)
 
         self.hold_label = Label(text='', font_size=dp(10),
                                 color=T.WARNING,
-                                size_hint_y=None, height=dp(20),
+                                size_hint_y=None, height=dp(16),
                                 italic=True)
         self.add_widget(self.hold_label)
 
     def _resize_grid(self, *a):
-        ui_total = dp(48 + 60 + 54 + 20 + 16)
-        available_w = Window.width - dp(16)
-        available_h = Window.height - ui_total
+        # hauteurs fixes : top 46, spacing 8*3, bottom_card 146, hold 16, padding 18
+        reserved = dp(46 + 24 + 146 + 16 + 18 + 12)
+        available_w = Window.width - dp(20) - dp(12)
+        available_h = Window.height - reserved
         size = min(available_w, available_h)
-        size = max(size, dp(280))
+        size = max(size, dp(260))
         cell = int(size / 9)
         size = cell * 9
         self.grid.size = (size, size)
+        self.grid_card.height = size + dp(12)
         self.grid._redraw()
 
     def _generate_new(self):
@@ -1033,11 +926,8 @@ class GameScreen(BoxLayout):
     def _cell_bg(self, r, c):
         sel = self.selected_cell
         val_here = self.current[r][c]
-        active_val = None
-        if self.selected_value is not None:
-            active_val = self.selected_value
-        elif sel and self.current[sel[0]][sel[1]] != 0:
-            active_val = self.current[sel[0]][sel[1]]
+        # La valeur de reference pour le surlignage est UNIQUEMENT selected_value
+        active_val = self.selected_value
 
         if sel and (r, c) == sel:
             return T.CELL_SELECTED
@@ -1069,6 +959,8 @@ class GameScreen(BoxLayout):
             self._refresh_all()
             return
 
+        # Mode normal : on selectionne la case, et la valeur surlignee
+        # devient celle de la case (ou rien si vide)
         self.selected_cell = (r, c)
         v = self.current[r][c]
         self.selected_value = v if v != 0 else None
@@ -1285,6 +1177,7 @@ class GameScreen(BoxLayout):
         self.hold_mode = False
         self.hold_number = None
         self.hold_label.text = ''
+        self.selected_value = None
         self._refresh_all()
 
     def _refresh_all(self):
@@ -1360,61 +1253,88 @@ class GameScreen(BoxLayout):
 
 
 # ============================================================
-#  POPUPS
+#  POPUPS (fond clair, texte lisible)
 # ============================================================
-class LoadingPopup(ModalView):
+class BasePopup(ModalView):
+    """Popup avec fond blanc force et coins arrondis"""
+    def __init__(self, **kwargs):
+        kwargs.setdefault('background', '')
+        kwargs.setdefault('background_color', (0, 0, 0, 0.45))
+        kwargs.setdefault('overlay_color', (0, 0, 0, 0.45))
+        super().__init__(**kwargs)
+        with self.canvas.before:
+            self._card_color = Color(*T.CARD)
+            self._card = RoundedRectangle(pos=self.pos, size=self.size,
+                                          radius=[(dp(18), dp(18))] * 4)
+        self.bind(pos=self._upd_card, size=self._upd_card)
+
+    def _upd_card(self, *a):
+        self._card.pos = self.pos
+        self._card.size = self.size
+
+
+class LoadingPopup(BasePopup):
     def __init__(self, text, **kwargs):
-        super().__init__(size_hint=(None, None), size=(dp(240), dp(100)),
-                         background_color=T.CARD, **kwargs)
+        super().__init__(size_hint=(None, None), size=(dp(220), dp(90)),
+                         auto_dismiss=False, **kwargs)
         self.add_widget(Label(text=text, color=T.TEXT_DARK,
-                              font_size=dp(13)))
+                              font_size=dp(14), bold=True))
 
 
-class EndDialog(ModalView):
+class EndDialog(BasePopup):
     def __init__(self, title, subtitle, detail, color, on_close, **kwargs):
-        super().__init__(size_hint=(None, None), size=(dp(280), dp(260)),
-                         background_color=T.CARD, **kwargs)
-        layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(8))
+        super().__init__(size_hint=(None, None), size=(dp(290), dp(250)),
+                         auto_dismiss=False, **kwargs)
+        layout = BoxLayout(orientation='vertical', padding=dp(22), spacing=dp(10))
         layout.add_widget(Label(text='[b]{}[/b]'.format(title), markup=True,
-                                font_size=dp(22), color=color,
-                                size_hint_y=None, height=dp(40)))
-        layout.add_widget(Label(text=subtitle, font_size=dp(14),
-                                color=T.TEXT_DARK,
-                                size_hint_y=None, height=dp(26)))
-        layout.add_widget(Label(text=detail, font_size=dp(11),
+                                font_size=dp(24), color=color,
+                                size_hint_y=None, height=dp(44)))
+        layout.add_widget(Label(text=subtitle, font_size=dp(15),
+                                color=T.TEXT_DARK, bold=True,
+                                size_hint_y=None, height=dp(28)))
+        layout.add_widget(Label(text=detail, font_size=dp(12),
                                 color=T.TEXT_MUTED,
-                                size_hint_y=None, height=dp(20)))
+                                size_hint_y=None, height=dp(22),
+                                halign='center', valign='middle'))
         layout.add_widget(Widget())
         btn = FlatButton(text="Retour a l'accueil",
-                         font_size=dp(13), bold=True,
+                         font_size=dp(14), bold=True,
                          bg_color=T.PRIMARY, border_color=T.PRIMARY,
                          text_color=T.TEXT_LIGHT,
-                         size_hint_y=None, height=dp(44))
+                         size_hint_y=None, height=dp(48), radius=dp(14))
         btn.bind(on_release=lambda b: (self.dismiss(), on_close()))
         layout.add_widget(btn)
         self.add_widget(layout)
 
 
-class HintDialog(ModalView):
+class HintDialog(BasePopup):
     def __init__(self, title, explanation, on_close, **kwargs):
-        super().__init__(size_hint=(0.88, None), height=dp(380),
-                         background_color=T.CARD, **kwargs)
-        layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
+        super().__init__(size_hint=(0.88, None), height=dp(360),
+                         auto_dismiss=False, **kwargs)
+        layout = BoxLayout(orientation='vertical', padding=dp(22), spacing=dp(12))
 
-        header = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(10))
-        icon = Label(text='[b]?[/b]', markup=True,
-                     font_size=dp(32), color=T.WARNING,
-                     size_hint_x=None, width=dp(40))
-        header.add_widget(icon)
+        header = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(10))
+        icon_w = Widget(size_hint_x=None, width=dp(38))
+        def draw_bulb(*a, w=icon_w):
+            w.canvas.after.clear()
+            with w.canvas.after:
+                Color(*T.WARNING)
+                cx, cy = w.center_x, w.center_y
+                rr = dp(11)
+                Ellipse(pos=(cx - rr, cy - rr * 0.4), size=(rr * 2, rr * 2))
+                Rectangle(pos=(cx - rr * 0.45, cy - rr * 1.3),
+                          size=(rr * 0.9, rr * 0.6))
+        icon_w.bind(pos=draw_bulb, size=draw_bulb)
+        header.add_widget(icon_w)
         title_lbl = Label(text='[b]{}[/b]'.format(title), markup=True,
-                          font_size=dp(16), color=T.TEXT_DARK,
+                          font_size=dp(17), color=T.TEXT_DARK,
                           halign='left', valign='middle')
         title_lbl.bind(size=lambda i, v: setattr(i, 'text_size', v))
         header.add_widget(title_lbl)
         layout.add_widget(header)
 
         scroll = ScrollView()
-        expl = Label(text=explanation, font_size=dp(12),
+        expl = Label(text=explanation, font_size=dp(13),
                      color=T.TEXT_DARK,
                      halign='left', valign='top',
                      size_hint_y=None)
@@ -1423,32 +1343,30 @@ class HintDialog(ModalView):
         scroll.add_widget(expl)
         layout.add_widget(scroll)
 
-        btns = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(8))
+        btns = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(10))
         if on_close is not None:
-            cancel_btn = FlatButton(text='Annuler', font_size=dp(12), bold=True,
+            cancel_btn = FlatButton(text='Annuler', font_size=dp(13), bold=True,
                                     bg_color=T.CARD, border_color=T.GRID_LINE,
-                                    text_color=T.TEXT_DARK)
+                                    text_color=T.TEXT_DARK, radius=dp(14))
             cancel_btn.bind(on_release=lambda b: self.dismiss())
             btns.add_widget(cancel_btn)
-
-            ok_btn = FlatButton(text='Reveler', font_size=dp(12), bold=True,
+            ok_btn = FlatButton(text='Reveler', font_size=dp(13), bold=True,
                                 bg_color=T.PRIMARY, border_color=T.PRIMARY,
-                                text_color=T.TEXT_LIGHT)
+                                text_color=T.TEXT_LIGHT, radius=dp(14))
             ok_btn.bind(on_release=lambda b: (self.dismiss(), on_close()))
             btns.add_widget(ok_btn)
         else:
-            ok_btn = FlatButton(text='OK', font_size=dp(12), bold=True,
+            ok_btn = FlatButton(text='OK', font_size=dp(13), bold=True,
                                 bg_color=T.PRIMARY, border_color=T.PRIMARY,
-                                text_color=T.TEXT_LIGHT)
+                                text_color=T.TEXT_LIGHT, radius=dp(14))
             ok_btn.bind(on_release=lambda b: self.dismiss())
             btns.add_widget(ok_btn)
         layout.add_widget(btns)
-
         self.add_widget(layout)
 
 
 # ============================================================
-#  ÉCRAN ACCUEIL
+#  ECRAN ACCUEIL
 # ============================================================
 class HomeScreen(BoxLayout):
     def __init__(self, app, **kwargs):
@@ -1513,8 +1431,7 @@ class HomeScreen(BoxLayout):
         new_btn = FlatButton(text='Nouvelle Partie',
                              font_size=dp(16), bold=True,
                              bg_color=T.PRIMARY, border_color=T.PRIMARY,
-                             text_color=T.TEXT_LIGHT,
-                             radius=dp(28))
+                             text_color=T.TEXT_LIGHT, radius=dp(28))
         new_btn.bind(on_release=lambda b: self.app.show_difficulty_select())
         bottom_area.add_widget(new_btn)
         self.add_widget(bottom_area)
@@ -1527,7 +1444,6 @@ class HomeScreen(BoxLayout):
         elapsed = sg.get('elapsed', 0)
         errors = sg.get('errors', 0)
         m, s = elapsed // 60, elapsed % 60
-
         card = FlatButton(
             text='[b]Reprendre la partie[/b]\n[size=11]{} - {:02d}:{:02d} - {}/3[/size]'.format(
                 diff, m, s, errors),
@@ -1544,7 +1460,6 @@ class HomeScreen(BoxLayout):
         stats = self.app.stats[diff]
         best = stats.get('best_time')
         best_str = '{:02d}:{:02d}'.format(best // 60, best % 60) if best else '-'
-
         btn = FlatButton(
             text='[b]{}[/b]\n[size=10]Record: {}[/size]'.format(diff, best_str),
             font_size=dp(15), markup=True,
@@ -1557,7 +1472,7 @@ class HomeScreen(BoxLayout):
 
 
 # ============================================================
-#  ÉCRAN DIFFICULTÉ
+#  ECRAN DIFFICULTE
 # ============================================================
 class DifficultyScreen(BoxLayout):
     def __init__(self, app, **kwargs):
@@ -1611,7 +1526,6 @@ class DifficultyScreen(BoxLayout):
         stats = self.app.stats[diff]
         best = stats.get('best_time')
         best_str = 'Record: {:02d}:{:02d}'.format(best // 60, best % 60) if best else 'Pas de record'
-
         btn = FlatButton(
             text='[b]{}[/b]\n[size=10]{}\n{}[/size]'.format(diff, desc, best_str),
             font_size=dp(15), markup=True,
@@ -1624,7 +1538,7 @@ class DifficultyScreen(BoxLayout):
 
 
 # ============================================================
-#  ÉCRAN STATS
+#  ECRAN STATS
 # ============================================================
 class StatsScreen(BoxLayout):
     def __init__(self, app, **kwargs):
@@ -1742,7 +1656,7 @@ class StatsScreen(BoxLayout):
 
 
 # ============================================================
-#  ÉCRAN AIDE
+#  ECRAN AIDE
 # ============================================================
 class HelpScreen(BoxLayout):
     def __init__(self, app, **kwargs):
