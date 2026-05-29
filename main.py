@@ -1,10 +1,8 @@
 """
 Sudoku — Application Android (Kivy)
-Version stable :
-- Popups fond clair lisibles
-- Surlignage corrige (reset au changement)
-- Layout en cartes arrondies, plus epure
-- Boutons d'action en FlatButton (touche garanti sur Android)
+- Grille pleine taille et centrée
+- Boutons en symboles/icônes au lieu de mots
+- Astuces intelligentes limitées à 2 par partie
 """
 
 import json
@@ -27,7 +25,7 @@ from kivy.graphics import Color, Rectangle, RoundedRectangle, Line
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.properties import (NumericProperty, BooleanProperty,
-                             ListProperty)
+                             ListProperty, ObjectProperty)
 from kivy.utils import get_color_from_hex as hex_to_rgba, platform
 from kivy.metrics import dp
 
@@ -48,6 +46,7 @@ class T:
     CELL_RELATED = hex_to_rgba('#EDF1F9')
     CELL_SAME_NUM = hex_to_rgba('#C9D9F2')
     CELL_SELECTED = hex_to_rgba('#A8C3EA')
+    CELL_HINT = hex_to_rgba('#FFE89C')
     TEXT_DARK = hex_to_rgba('#1E2A47')
     TEXT_USER = hex_to_rgba('#2D6CDF')
     TEXT_NOTE = hex_to_rgba('#6B7A99')
@@ -69,6 +68,9 @@ class T:
     }
 
 
+# ============================================================
+#  PERSISTANCE
+# ============================================================
 def _storage_dir():
     try:
         from android.storage import app_storage_path
@@ -107,7 +109,7 @@ def default_stats():
 
 
 # ============================================================
-#  GENERATEUR
+#  GÉNÉRATEUR
 # ============================================================
 class SudokuGenerator:
     def is_valid(self, g, r, c, n):
@@ -175,11 +177,14 @@ class SudokuGenerator:
 
 
 # ============================================================
-#  ANALYSEUR D'ASTUCES
+#  ANALYSEUR D'ASTUCES INTELLIGENT
 # ============================================================
 class HintFinder:
+    """Trouve une astuce intelligente avec explication pédagogique"""
+
     @staticmethod
     def candidates(current, r, c):
+        """Retourne l'ensemble des chiffres possibles pour la case (r,c)"""
         if current[r][c] != 0:
             return set()
         used = set()
@@ -194,6 +199,17 @@ class HintFinder:
 
     @staticmethod
     def find_hint(puzzle, current, solution):
+        """
+        Trouve une bonne astuce. Retourne (row, col, num, explanation) ou None.
+
+        Stratégies par ordre de qualité:
+        1. Case avec un seul candidat possible (singleton naked)
+        2. Chiffre qui ne peut aller qu'à une seule place dans une ligne
+        3. Chiffre qui ne peut aller qu'à une seule place dans une colonne
+        4. Chiffre qui ne peut aller qu'à une seule place dans un bloc 3x3
+        5. Sinon une case aléatoire vide
+        """
+        # Stratégie 1 : naked singleton (case avec un seul candidat)
         for r in range(9):
             for c in range(9):
                 if current[r][c] == 0:
@@ -202,28 +218,39 @@ class HintFinder:
                         num = cands.pop()
                         if num == solution[r][c]:
                             return (r, c, num,
-                                    "Cette case (ligne {}, colonne {}) n'a qu'une seule valeur possible : {}.\n\nTous les autres chiffres de sa ligne, sa colonne et son carre 3x3 sont deja utilises.".format(r + 1, c + 1, num))
+                                    f"Cette case (ligne {r+1}, colonne {c+1}) n'a qu'une seule valeur possible : {num}.\n\n"
+                                    f"En regardant sa ligne, sa colonne et son carre 3x3, tous les autres chiffres sont deja utilises.")
 
+        # Stratégie 2 : hidden singleton dans une ligne
         for r in range(9):
             for n in range(1, 10):
-                possible = [c for c in range(9)
-                            if current[r][c] == 0 and n in HintFinder.candidates(current, r, c)]
+                # Chercher où n peut aller dans cette ligne
+                possible = []
+                for c in range(9):
+                    if current[r][c] == 0 and n in HintFinder.candidates(current, r, c):
+                        possible.append(c)
                 if len(possible) == 1:
                     c = possible[0]
                     if n == solution[r][c]:
                         return (r, c, n,
-                                "Le chiffre {} ne peut aller qu'en colonne {} dans la ligne {}.\n\nAucune autre case vide de cette ligne ne peut contenir {}.".format(n, c + 1, r + 1, n))
+                                f"Le chiffre {n} ne peut aller qu'en colonne {c+1} dans la ligne {r+1}.\n\n"
+                                f"Toutes les autres cases vides de cette ligne ne peuvent pas contenir {n} a cause des contraintes de leurs colonnes ou blocs.")
 
+        # Stratégie 3 : hidden singleton dans une colonne
         for c in range(9):
             for n in range(1, 10):
-                possible = [r for r in range(9)
-                            if current[r][c] == 0 and n in HintFinder.candidates(current, r, c)]
+                possible = []
+                for r in range(9):
+                    if current[r][c] == 0 and n in HintFinder.candidates(current, r, c):
+                        possible.append(r)
                 if len(possible) == 1:
                     r = possible[0]
                     if n == solution[r][c]:
                         return (r, c, n,
-                                "Le chiffre {} ne peut aller qu'en ligne {} dans la colonne {}.".format(n, r + 1, c + 1))
+                                f"Le chiffre {n} ne peut aller qu'en ligne {r+1} dans la colonne {c+1}.\n\n"
+                                f"Toutes les autres cases vides de cette colonne ne peuvent pas contenir {n} a cause des contraintes de leurs lignes ou blocs.")
 
+        # Stratégie 4 : hidden singleton dans un bloc 3x3
         for br in range(0, 9, 3):
             for bc in range(0, 9, 3):
                 for n in range(1, 10):
@@ -236,10 +263,12 @@ class HintFinder:
                     if len(possible) == 1:
                         r, c = possible[0]
                         if n == solution[r][c]:
-                            block = (br // 3) * 3 + (bc // 3) + 1
+                            block_num = (br // 3) * 3 + (bc // 3) + 1
                             return (r, c, n,
-                                    "Dans le carre 3x3 numero {}, le chiffre {} ne peut aller qu'en ligne {}, colonne {}.".format(block, n, r + 1, c + 1))
+                                    f"Dans le carre 3x3 numero {block_num} (en haut a gauche : ligne {br+1}-{br+3}, colonne {bc+1}-{bc+3}), le chiffre {n} ne peut aller qu'en ligne {r+1}, colonne {c+1}.\n\n"
+                                    f"Les autres cases vides du carre ne peuvent pas contenir {n}.")
 
+        # Fallback : une case avec peu de candidats
         best = None
         best_cands = 10
         for r in range(9):
@@ -253,13 +282,17 @@ class HintFinder:
             r, c = best
             num = solution[r][c]
             return (r, c, num,
-                    "La case ligne {}, colonne {} doit contenir {}.".format(r + 1, c + 1, num))
+                    f"La case ligne {r+1}, colonne {c+1} doit contenir {num}.\n\n"
+                    f"Il y a {best_cands} candidats possibles pour cette case, et la deduction logique permet de trouver {num}.")
 
+        # Vraiment rien trouvé : prendre une case vide
         for r in range(9):
             for c in range(9):
                 if current[r][c] == 0:
-                    return (r, c, solution[r][c],
-                            "Essayez de placer {} en ligne {}, colonne {}.".format(solution[r][c], r + 1, c + 1))
+                    num = solution[r][c]
+                    return (r, c, num,
+                            f"Essayez de placer {num} en ligne {r+1}, colonne {c+1}.")
+
         return None
 
 
@@ -313,7 +346,7 @@ class FlatButton(Button):
 class Card(BoxLayout):
     bg_color = ListProperty(T.CARD)
     border_color = ListProperty(T.GRID_LINE)
-    radius = NumericProperty(dp(14))
+    radius = NumericProperty(dp(10))
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -459,6 +492,9 @@ class SudokuGrid(Widget):
                         self.add_widget(lbl)
 
 
+# ============================================================
+#  BOUTON CHIFFRE
+# ============================================================
 class NumberButton(ButtonBehavior, Widget):
     num = NumericProperty(1)
     count_left = NumericProperty(9)
@@ -483,7 +519,7 @@ class NumberButton(ButtonBehavior, Widget):
             fg = T.TEXT_GREY
         else:
             fg = T.PRIMARY
-        font_size = self.height * 0.6 if self.height > 0 else dp(26)
+        font_size = self.height * 0.5 if self.height > 0 else dp(22)
         lbl = Label(text='[b]{}[/b]'.format(self.num), markup=True,
                     color=fg, font_size=font_size,
                     pos=self.pos, size=self.size,
@@ -519,124 +555,7 @@ class NumberButton(ButtonBehavior, Widget):
 
 
 # ============================================================
-#  POPUPS
-# ============================================================
-class BasePopup(ModalView):
-    def __init__(self, **kwargs):
-        kwargs.setdefault('background_color', (0, 0, 0, 0.45))
-        super().__init__(**kwargs)
-        with self.canvas.before:
-            self._card_color = Color(*T.CARD)
-            self._card = RoundedRectangle(pos=self.pos, size=self.size,
-                                          radius=[(dp(18), dp(18))] * 4)
-        self.bind(pos=self._upd_card, size=self._upd_card)
-
-    def _upd_card(self, *a):
-        self._card.pos = self.pos
-        self._card.size = self.size
-
-
-class LoadingPopup(BasePopup):
-    def __init__(self, text, **kwargs):
-        super().__init__(size_hint=(None, None), size=(dp(220), dp(90)),
-                         auto_dismiss=False, **kwargs)
-        self.add_widget(Label(text=text, color=T.TEXT_DARK,
-                              font_size=dp(14), bold=True))
-
-
-class EndDialog(BasePopup):
-    def __init__(self, title, subtitle, detail, color, on_close, **kwargs):
-        super().__init__(size_hint=(None, None), size=(dp(290), dp(250)),
-                         auto_dismiss=False, **kwargs)
-        layout = BoxLayout(orientation='vertical', padding=dp(22), spacing=dp(10))
-        layout.add_widget(Label(text='[b]{}[/b]'.format(title), markup=True,
-                                font_size=dp(24), color=color,
-                                size_hint_y=None, height=dp(44)))
-        layout.add_widget(Label(text=subtitle, font_size=dp(15),
-                                color=T.TEXT_DARK, bold=True,
-                                size_hint_y=None, height=dp(28)))
-        layout.add_widget(Label(text=detail, font_size=dp(12),
-                                color=T.TEXT_MUTED,
-                                size_hint_y=None, height=dp(22),
-                                halign='center', valign='middle'))
-        layout.add_widget(Widget())
-        btn = FlatButton(text="Retour a l'accueil",
-                         font_size=dp(14), bold=True,
-                         bg_color=T.PRIMARY, border_color=T.PRIMARY,
-                         text_color=T.TEXT_LIGHT,
-                         size_hint_y=None, height=dp(48), radius=dp(14))
-        btn.bind(on_release=lambda b: (self.dismiss(), on_close()))
-        layout.add_widget(btn)
-        self.add_widget(layout)
-
-
-class HintDialog(BasePopup):
-    def __init__(self, title, explanation, on_close, **kwargs):
-        super().__init__(size_hint=(0.88, None), height=dp(360),
-                         auto_dismiss=False, **kwargs)
-        layout = BoxLayout(orientation='vertical', padding=dp(22), spacing=dp(12))
-        header = Label(text='[b]{}[/b]'.format(title), markup=True,
-                       font_size=dp(18), color=T.WARNING,
-                       size_hint_y=None, height=dp(36),
-                       halign='left', valign='middle')
-        header.bind(size=lambda i, v: setattr(i, 'text_size', v))
-        layout.add_widget(header)
-        scroll = ScrollView()
-        expl = Label(text=explanation, font_size=dp(13),
-                     color=T.TEXT_DARK,
-                     halign='left', valign='top',
-                     size_hint_y=None)
-        expl.bind(width=lambda i, v: setattr(i, 'text_size', (v, None)))
-        expl.bind(texture_size=lambda i, v: setattr(i, 'height', v[1]))
-        scroll.add_widget(expl)
-        layout.add_widget(scroll)
-        btns = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(10))
-        if on_close is not None:
-            cancel_btn = FlatButton(text='Annuler', font_size=dp(13), bold=True,
-                                    bg_color=T.CARD, border_color=T.GRID_LINE,
-                                    text_color=T.TEXT_DARK, radius=dp(14))
-            cancel_btn.bind(on_release=lambda b: self.dismiss())
-            btns.add_widget(cancel_btn)
-            ok_btn = FlatButton(text='Reveler', font_size=dp(13), bold=True,
-                                bg_color=T.PRIMARY, border_color=T.PRIMARY,
-                                text_color=T.TEXT_LIGHT, radius=dp(14))
-            ok_btn.bind(on_release=lambda b: (self.dismiss(), on_close()))
-            btns.add_widget(ok_btn)
-        else:
-            ok_btn = FlatButton(text='OK', font_size=dp(13), bold=True,
-                                bg_color=T.PRIMARY, border_color=T.PRIMARY,
-                                text_color=T.TEXT_LIGHT, radius=dp(14))
-            ok_btn.bind(on_release=lambda b: self.dismiss())
-            btns.add_widget(ok_btn)
-        layout.add_widget(btns)
-        self.add_widget(layout)
-
-
-class ErrorDialog(BasePopup):
-    def __init__(self, message, on_close, **kwargs):
-        super().__init__(size_hint=(0.92, 0.7), auto_dismiss=False, **kwargs)
-        layout = BoxLayout(orientation='vertical', padding=dp(18), spacing=dp(10))
-        layout.add_widget(Label(text='[b]Erreur[/b]', markup=True,
-                                font_size=dp(18), color=T.DANGER,
-                                size_hint_y=None, height=dp(34)))
-        scroll = ScrollView()
-        lbl = Label(text=message, font_size=dp(10), color=T.TEXT_DARK,
-                    halign='left', valign='top', size_hint_y=None)
-        lbl.bind(width=lambda i, v: setattr(i, 'text_size', (v, None)))
-        lbl.bind(texture_size=lambda i, v: setattr(i, 'height', v[1]))
-        scroll.add_widget(lbl)
-        layout.add_widget(scroll)
-        btn = FlatButton(text='Retour', font_size=dp(13), bold=True,
-                         bg_color=T.PRIMARY, border_color=T.PRIMARY,
-                         text_color=T.TEXT_LIGHT,
-                         size_hint_y=None, height=dp(46), radius=dp(14))
-        btn.bind(on_release=lambda b: (self.dismiss(), on_close()))
-        layout.add_widget(btn)
-        self.add_widget(layout)
-
-
-# ============================================================
-#  ECRAN DE JEU
+#  ÉCRAN DE JEU
 # ============================================================
 class GameScreen(BoxLayout):
     def __init__(self, app, difficulty, resume_data=None, **kwargs):
@@ -692,31 +611,36 @@ class GameScreen(BoxLayout):
         instance.text_size = instance.size
 
     def _build_ui(self):
-        self.padding = [dp(10), dp(8), dp(10), dp(10)]
-        self.spacing = dp(8)
+        # ====== Top bar compacte avec icônes ======
+        top = BoxLayout(size_hint_y=None, height=dp(48),
+                        padding=[dp(10), dp(6), dp(10), 0], spacing=dp(6))
 
-        # Top bar
-        top = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(8))
-        back_btn = FlatButton(text='<', font_size=dp(22), bold=True,
+        back_btn = FlatButton(text='<', font_size=dp(20), bold=True,
                               bg_color=T.CARD, border_color=T.GRID_LINE,
                               text_color=T.TEXT_DARK,
-                              size_hint_x=None, width=dp(50))
+                              size_hint_x=None, width=dp(46))
         back_btn.bind(on_release=lambda b: self.go_home())
         top.add_widget(back_btn)
 
-        center_info = BoxLayout(orientation='vertical')
-        self.diff_label = Label(text=self.difficulty, font_size=dp(12),
+        # Difficulté/erreur/temps centrés
+        center_info = BoxLayout(orientation='vertical', spacing=dp(2))
+        self.diff_label = Label(text=self.difficulty,
+                                font_size=dp(10),
                                 color=T.TEXT_MUTED,
                                 halign='center', valign='middle')
         self.diff_label.bind(size=self._fix_label)
         center_info.add_widget(self.diff_label)
-        info_row = BoxLayout(spacing=dp(12))
-        self.err_label = Label(text='Erreur: 0/3', font_size=dp(13), bold=True,
+
+        info_row = BoxLayout(spacing=dp(8))
+        self.err_label = Label(text='Erreur: 0/3',
+                               font_size=dp(11), bold=True,
                                color=T.TEXT_MUTED,
                                halign='center', valign='middle')
         self.err_label.bind(size=self._fix_label)
         info_row.add_widget(self.err_label)
-        self.timer_label = Label(text='00:00', font_size=dp(13), bold=True,
+
+        self.timer_label = Label(text='00:00',
+                                 font_size=dp(11), bold=True,
                                  color=T.TEXT_MUTED,
                                  halign='center', valign='middle')
         self.timer_label.bind(size=self._fix_label)
@@ -724,107 +648,114 @@ class GameScreen(BoxLayout):
         center_info.add_widget(info_row)
         top.add_widget(center_info)
 
-        self.pause_btn = FlatButton(text='II', font_size=dp(16), bold=True,
+        # Bouton pause à droite
+        self.pause_btn = FlatButton(text='||', font_size=dp(16), bold=True,
                                     bg_color=T.CARD, border_color=T.PRIMARY,
                                     text_color=T.PRIMARY,
-                                    size_hint_x=None, width=dp(50))
+                                    size_hint_x=None, width=dp(46))
         self.pause_btn.bind(on_release=lambda b: self.toggle_pause())
         top.add_widget(self.pause_btn)
+
         self.add_widget(top)
 
-        # Grille dans une carte
-        self.grid_card = Card(bg_color=T.CARD, border_color=T.GRID_LINE,
-                              size_hint_y=None, padding=dp(6))
-        grid_anchor = AnchorLayout(anchor_x='center', anchor_y='center')
+        # ====== Grille PLEINE TAILLE ======
+        # On utilise size_hint_y=1 pour que la grille prenne tout l'espace dispo
+        self.grid_anchor = AnchorLayout(
+            anchor_x='center', anchor_y='center',
+            padding=[dp(4), dp(4)])
         self.grid = SudokuGrid(self, size_hint=(None, None))
-        grid_anchor.add_widget(self.grid)
-        self.grid_card.add_widget(grid_anchor)
-        self.add_widget(self.grid_card)
+        self.grid_anchor.add_widget(self.grid)
+        self.add_widget(self.grid_anchor)
 
         Window.bind(size=self._resize_grid)
         Clock.schedule_once(lambda dt: self._resize_grid(), 0.01)
         Clock.schedule_once(lambda dt: self._resize_grid(), 0.2)
 
-        # Carte boutons + pave
-        bottom_card = Card(bg_color=T.CARD, border_color=T.GRID_LINE,
-                           size_hint_y=None, height=dp(140),
-                           orientation='vertical',
-                           padding=[dp(8), dp(10)], spacing=dp(8))
+        # ====== Boutons d'action (icônes) ======
+        actions = BoxLayout(size_hint_y=None, height=dp(58),
+                            padding=[dp(8), dp(4)], spacing=dp(6))
 
-        actions = BoxLayout(size_hint_y=None, height=dp(52), spacing=dp(4))
-        self.undo_btn = FlatButton(text='Annuler', font_size=dp(13), bold=True,
+        # Annuler - flèche retour arrière
+        self.undo_btn = FlatButton(text='[size=22]<-[/size]\n[size=9]Annuler[/size]',
+                                   markup=True,
+                                   halign='center', valign='middle',
                                    bg_color=T.CARD, border_color=T.GRID_LINE,
                                    text_color=T.TEXT_DARK)
         self.undo_btn.bind(on_release=lambda b: self.undo())
         actions.add_widget(self.undo_btn)
 
-        self.erase_btn = FlatButton(text='Effacer', font_size=dp(13), bold=True,
+        # Effacer - croix/gomme
+        self.erase_btn = FlatButton(text='[size=22]X[/size]\n[size=9]Effacer[/size]',
+                                    markup=True,
+                                    halign='center', valign='middle',
                                     bg_color=T.CARD, border_color=T.GRID_LINE,
                                     text_color=T.TEXT_DARK)
         self.erase_btn.bind(on_release=lambda b: self.erase())
         actions.add_widget(self.erase_btn)
 
-        self.notes_btn = FlatButton(text='Notes OFF', font_size=dp(13), bold=True,
+        # Notes - crayon
+        self.notes_btn = FlatButton(text='[size=20]N[/size]\n[size=9]Notes OFF[/size]',
+                                    markup=True,
+                                    halign='center', valign='middle',
                                     bg_color=T.CARD, border_color=T.GRID_LINE,
                                     text_color=T.TEXT_DARK)
         self.notes_btn.bind(on_release=lambda b: self.toggle_notes())
         actions.add_widget(self.notes_btn)
 
-        self.hint_btn = FlatButton(text='Astuce 2/2', font_size=dp(13), bold=True,
-                                   bg_color=T.CARD, border_color=T.WARNING,
-                                   text_color=T.WARNING)
+        # Astuce - ampoule
+        self.hint_btn = FlatButton(text='[size=20]?[/size]\n[size=9]Astuce 2/2[/size]',
+                                   markup=True,
+                                   halign='center', valign='middle',
+                                   bg_color=T.CARD, border_color=T.GRID_LINE,
+                                   text_color=T.TEXT_DARK)
         self.hint_btn.bind(on_release=lambda b: self.use_hint())
         actions.add_widget(self.hint_btn)
-        bottom_card.add_widget(actions)
 
-        nums = BoxLayout(size_hint_y=None, height=dp(56), spacing=dp(2))
+        self.add_widget(actions)
+
+        # ====== Pavé numérique ======
+        nums = BoxLayout(size_hint_y=None, height=dp(54),
+                         padding=[dp(8), dp(2)], spacing=dp(3))
         self.num_buttons = {}
         for i in range(1, 10):
             wrap = NumberButton(num=i, game=self)
             nums.add_widget(wrap)
             self.num_buttons[i] = wrap
-        bottom_card.add_widget(nums)
+        self.add_widget(nums)
 
-        self.add_widget(bottom_card)
-
+        # Mode rapide
         self.hold_label = Label(text='', font_size=dp(10),
                                 color=T.WARNING,
-                                size_hint_y=None, height=dp(16),
+                                size_hint_y=None, height=dp(20),
                                 italic=True)
         self.add_widget(self.hold_label)
 
     def _resize_grid(self, *a):
-        try:
-            reserved = dp(46 + 24 + 140 + 16 + 18 + 12)
-            available_w = Window.width - dp(32)
-            available_h = Window.height - reserved
-            size = min(available_w, available_h)
-            size = max(size, dp(260))
-            cell = int(size / 9)
-            size = cell * 9
-            self.grid.size = (size, size)
-            self.grid_card.height = size + dp(12)
-            self.grid._redraw()
-        except Exception:
-            pass
+        # Calculer la taille disponible pour la grille
+        # Window.width - petit padding
+        # Window.height - top bar (48) - actions (58) - nums (54) - hold (20) - padding
+        ui_total = dp(48 + 58 + 54 + 20 + 16)
+        available_w = Window.width - dp(16)
+        available_h = Window.height - ui_total
+        size = min(available_w, available_h)
+        size = max(size, dp(280))
+        cell = int(size / 9)
+        size = cell * 9
+        self.grid.size = (size, size)
+        self.grid._redraw()
 
     def _generate_new(self):
         loading = LoadingPopup('Generation...')
         loading.open()
 
         def gen_then_continue(dt):
-            try:
-                self.puzzle, self.solution = SudokuGenerator().generate(self.difficulty)
-                self.current = copy.deepcopy(self.puzzle)
-                self.notes = [[set() for _ in range(9)] for _ in range(9)]
-                self.start_time = time.time()
-                self.elapsed = 0
-                loading.dismiss()
-                self._refresh_all()
-            except Exception:
-                loading.dismiss()
-                import traceback
-                self.app._show_error(traceback.format_exc())
+            self.puzzle, self.solution = SudokuGenerator().generate(self.difficulty)
+            self.current = copy.deepcopy(self.puzzle)
+            self.notes = [[set() for _ in range(9)] for _ in range(9)]
+            self.start_time = time.time()
+            self.elapsed = 0
+            loading.dismiss()
+            self._refresh_all()
 
         Clock.schedule_once(gen_then_continue, 0.1)
 
@@ -868,7 +799,11 @@ class GameScreen(BoxLayout):
     def _cell_bg(self, r, c):
         sel = self.selected_cell
         val_here = self.current[r][c]
-        active_val = self.selected_value
+        active_val = None
+        if self.selected_value is not None:
+            active_val = self.selected_value
+        elif sel and self.current[sel[0]][sel[1]] != 0:
+            active_val = self.current[sel[0]][sel[1]]
 
         if sel and (r, c) == sel:
             return T.CELL_SELECTED
@@ -924,11 +859,13 @@ class GameScreen(BoxLayout):
         was_err = (r, c) in self.error_cells
         if num == prev and not was_err:
             return
+
         self.history.append({
             'type': 'value', 'r': r, 'c': c, 'prev': prev,
             'was_err': was_err, 'errors': self.errors,
             'notes_before': list(self.notes[r][c])
         })
+
         self.current[r][c] = num
         if num != 0:
             self.notes[r][c] = set()
@@ -1008,12 +945,12 @@ class GameScreen(BoxLayout):
             return
         self.notes_mode = not self.notes_mode
         if self.notes_mode:
-            self.notes_btn.text = 'Notes ON'
+            self.notes_btn.text = '[size=20]N[/size]\n[size=9]Notes ON[/size]'
             self.notes_btn.bg_color = T.PRIMARY
             self.notes_btn.text_color = T.TEXT_LIGHT
             self.notes_btn.border_color = T.PRIMARY
         else:
-            self.notes_btn.text = 'Notes OFF'
+            self.notes_btn.text = '[size=20]N[/size]\n[size=9]Notes OFF[/size]'
             self.notes_btn.bg_color = T.CARD
             self.notes_btn.text_color = T.TEXT_DARK
             self.notes_btn.border_color = T.GRID_LINE
@@ -1025,29 +962,34 @@ class GameScreen(BoxLayout):
         if self.paused:
             self.pause_btn.text = '>'
         else:
-            self.pause_btn.text = 'II'
+            self.pause_btn.text = '||'
             self.start_time = time.time() - self.elapsed
         self.grid._redraw()
 
     def use_hint(self):
         if self.paused or self.game_over:
             return
+
+        # Vérifier qu'on a encore des astuces
         remaining = self.max_hints - self.hints_used
         if remaining <= 0:
             HintDialog(
-                title="Plus d'astuces",
-                explanation="Vous avez deja utilise vos {} astuces pour cette partie.\n\nA vous de jouer !".format(self.max_hints),
+                title='Plus d\'astuces',
+                explanation='Vous avez deja utilise vos {} astuces pour cette partie.\n\nA vous de jouer !'.format(self.max_hints),
                 on_close=None
             ).open()
             return
 
+        # Trouver l'astuce intelligente
         hint = HintFinder.find_hint(self.puzzle, self.current, self.solution)
         if not hint:
             return
 
         r, c, num, explanation = hint
 
+        # Afficher d'abord l'explication
         def reveal():
+            # Placer la valeur après explication
             self.history.append({
                 'type': 'value', 'r': r, 'c': c,
                 'prev': self.current[r][c],
@@ -1113,7 +1055,6 @@ class GameScreen(BoxLayout):
         self.hold_mode = False
         self.hold_number = None
         self.hold_label.text = ''
-        self.selected_value = None
         self._refresh_all()
 
     def _refresh_all(self):
@@ -1123,14 +1064,12 @@ class GameScreen(BoxLayout):
         else:
             self.err_label.color = T.TEXT_MUTED
 
+        # Mise à jour bouton astuce
         remaining = self.max_hints - self.hints_used
-        self.hint_btn.text = 'Astuce {}/{}'.format(remaining, self.max_hints)
+        self.hint_btn.text = '[size=20]?[/size]\n[size=9]Astuce {}/{}[/size]'.format(
+            remaining, self.max_hints)
         if remaining <= 0:
             self.hint_btn.text_color = T.TEXT_GREY
-            self.hint_btn.border_color = T.TEXT_GREY
-        else:
-            self.hint_btn.text_color = T.WARNING
-            self.hint_btn.border_color = T.WARNING
 
         counts = {n: 9 for n in range(1, 10)}
         if self.current:
@@ -1187,7 +1126,98 @@ class GameScreen(BoxLayout):
 
 
 # ============================================================
-#  ECRAN ACCUEIL
+#  POPUPS
+# ============================================================
+class LoadingPopup(ModalView):
+    def __init__(self, text, **kwargs):
+        super().__init__(size_hint=(None, None), size=(dp(240), dp(100)),
+                         background='', background_color=T.CARD, **kwargs)
+        self.add_widget(Label(text=text, color=T.TEXT_DARK,
+                              font_size=dp(13)))
+
+
+class EndDialog(ModalView):
+    def __init__(self, title, subtitle, detail, color, on_close, **kwargs):
+        super().__init__(size_hint=(None, None), size=(dp(280), dp(260)),
+                         background='', background_color=T.CARD, **kwargs)
+        layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(8))
+        layout.add_widget(Label(text='[b]{}[/b]'.format(title), markup=True,
+                                font_size=dp(22), color=color,
+                                size_hint_y=None, height=dp(40)))
+        layout.add_widget(Label(text=subtitle, font_size=dp(14),
+                                color=T.TEXT_DARK,
+                                size_hint_y=None, height=dp(26)))
+        layout.add_widget(Label(text=detail, font_size=dp(11),
+                                color=T.TEXT_MUTED,
+                                size_hint_y=None, height=dp(20)))
+        layout.add_widget(Widget())
+        btn = FlatButton(text="Retour a l'accueil",
+                         font_size=dp(13), bold=True,
+                         bg_color=T.PRIMARY, border_color=T.PRIMARY,
+                         text_color=T.TEXT_LIGHT,
+                         size_hint_y=None, height=dp(44))
+        btn.bind(on_release=lambda b: (self.dismiss(), on_close()))
+        layout.add_widget(btn)
+        self.add_widget(layout)
+
+
+class HintDialog(ModalView):
+    def __init__(self, title, explanation, on_close, **kwargs):
+        super().__init__(size_hint=(0.88, None), height=dp(380),
+                         background='', background_color=T.CARD, **kwargs)
+        layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
+
+        # Icone + titre
+        header = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(10))
+        icon = Label(text='[b]?[/b]', markup=True,
+                     font_size=dp(32), color=T.WARNING,
+                     size_hint_x=None, width=dp(40))
+        header.add_widget(icon)
+        title_lbl = Label(text='[b]{}[/b]'.format(title), markup=True,
+                          font_size=dp(16), color=T.TEXT_DARK,
+                          halign='left', valign='middle')
+        title_lbl.bind(size=lambda i, v: setattr(i, 'text_size', v))
+        header.add_widget(title_lbl)
+        layout.add_widget(header)
+
+        # Texte d'explication
+        scroll = ScrollView()
+        expl = Label(text=explanation, font_size=dp(12),
+                     color=T.TEXT_DARK,
+                     halign='left', valign='top',
+                     size_hint_y=None)
+        expl.bind(width=lambda i, v: setattr(i, 'text_size', (v, None)))
+        expl.bind(texture_size=lambda i, v: setattr(i, 'height', v[1]))
+        scroll.add_widget(expl)
+        layout.add_widget(scroll)
+
+        # Boutons
+        btns = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(8))
+        if on_close is not None:
+            cancel_btn = FlatButton(text='Annuler', font_size=dp(12), bold=True,
+                                    bg_color=T.CARD, border_color=T.GRID_LINE,
+                                    text_color=T.TEXT_DARK)
+            cancel_btn.bind(on_release=lambda b: self.dismiss())
+            btns.add_widget(cancel_btn)
+
+            ok_btn = FlatButton(text='Reveler', font_size=dp(12), bold=True,
+                                bg_color=T.PRIMARY, border_color=T.PRIMARY,
+                                text_color=T.TEXT_LIGHT)
+            ok_btn.bind(on_release=lambda b: (self.dismiss(), on_close()))
+            btns.add_widget(ok_btn)
+        else:
+            ok_btn = FlatButton(text='OK', font_size=dp(12), bold=True,
+                                bg_color=T.PRIMARY, border_color=T.PRIMARY,
+                                text_color=T.TEXT_LIGHT)
+            ok_btn.bind(on_release=lambda b: self.dismiss())
+            btns.add_widget(ok_btn)
+        layout.add_widget(btns)
+
+        self.add_widget(layout)
+
+
+# ============================================================
+#  ÉCRAN ACCUEIL
 # ============================================================
 class HomeScreen(BoxLayout):
     def __init__(self, app, **kwargs):
@@ -1213,7 +1243,7 @@ class HomeScreen(BoxLayout):
         help_btn.bind(on_release=lambda b: self.app.show_help())
         top.add_widget(help_btn)
         top.add_widget(Widget())
-        stats_btn = FlatButton(text='*', font_size=dp(22), bold=True,
+        stats_btn = FlatButton(text='*', font_size=dp(20), bold=True,
                                bg_color=T.CARD, border_color=T.GRID_LINE,
                                text_color=T.WARNING,
                                size_hint_x=None, width=dp(50))
@@ -1252,7 +1282,8 @@ class HomeScreen(BoxLayout):
         new_btn = FlatButton(text='Nouvelle Partie',
                              font_size=dp(16), bold=True,
                              bg_color=T.PRIMARY, border_color=T.PRIMARY,
-                             text_color=T.TEXT_LIGHT, radius=dp(28))
+                             text_color=T.TEXT_LIGHT,
+                             radius=dp(28))
         new_btn.bind(on_release=lambda b: self.app.show_difficulty_select())
         bottom_area.add_widget(new_btn)
         self.add_widget(bottom_area)
@@ -1265,6 +1296,7 @@ class HomeScreen(BoxLayout):
         elapsed = sg.get('elapsed', 0)
         errors = sg.get('errors', 0)
         m, s = elapsed // 60, elapsed % 60
+
         card = FlatButton(
             text='[b]Reprendre la partie[/b]\n[size=11]{} - {:02d}:{:02d} - {}/3[/size]'.format(
                 diff, m, s, errors),
@@ -1281,6 +1313,7 @@ class HomeScreen(BoxLayout):
         stats = self.app.stats[diff]
         best = stats.get('best_time')
         best_str = '{:02d}:{:02d}'.format(best // 60, best % 60) if best else '-'
+
         btn = FlatButton(
             text='[b]{}[/b]\n[size=10]Record: {}[/size]'.format(diff, best_str),
             font_size=dp(15), markup=True,
@@ -1293,7 +1326,7 @@ class HomeScreen(BoxLayout):
 
 
 # ============================================================
-#  ECRAN DIFFICULTE
+#  ÉCRAN DIFFICULTÉ
 # ============================================================
 class DifficultyScreen(BoxLayout):
     def __init__(self, app, **kwargs):
@@ -1347,6 +1380,7 @@ class DifficultyScreen(BoxLayout):
         stats = self.app.stats[diff]
         best = stats.get('best_time')
         best_str = 'Record: {:02d}:{:02d}'.format(best // 60, best % 60) if best else 'Pas de record'
+
         btn = FlatButton(
             text='[b]{}[/b]\n[size=10]{}\n{}[/size]'.format(diff, desc, best_str),
             font_size=dp(15), markup=True,
@@ -1359,7 +1393,7 @@ class DifficultyScreen(BoxLayout):
 
 
 # ============================================================
-#  ECRAN STATS
+#  ÉCRAN STATS
 # ============================================================
 class StatsScreen(BoxLayout):
     def __init__(self, app, **kwargs):
@@ -1407,6 +1441,7 @@ class StatsScreen(BoxLayout):
                                  padding=[dp(20), dp(12)],
                                  spacing=dp(8))
         self.add_widget(self.content)
+
         self._show_tab('Facile')
         self.add_widget(self.app.build_bottom_nav('stats'))
 
@@ -1452,6 +1487,7 @@ class StatsScreen(BoxLayout):
                                         '{:.0f}% des gains'.format(won_ne / won * 100) if won else ''))
         grid.add_widget(self._stat_card('Temps moyen', fmt_time(avg)))
         self.content.add_widget(grid)
+
         best_card = self._stat_card('Meilleur temps', fmt_time(best))
         self.content.add_widget(best_card)
         self.content.add_widget(Widget())
@@ -1475,7 +1511,7 @@ class StatsScreen(BoxLayout):
 
 
 # ============================================================
-#  ECRAN AIDE
+#  ÉCRAN AIDE
 # ============================================================
 class HelpScreen(BoxLayout):
     def __init__(self, app, **kwargs):
@@ -1577,9 +1613,6 @@ class SudokuApp(App):
         self.root_layout.clear_widgets()
         self.root_layout.add_widget(widget)
 
-    def _show_error(self, msg):
-        ErrorDialog(msg, on_close=self.show_home).open()
-
     def show_home(self):
         if self.game_screen and not self.game_screen.game_over:
             self.game_screen.save_state()
@@ -1604,23 +1637,15 @@ class SudokuApp(App):
         except Exception:
             pass
         self.saved_game = None
-        try:
-            self.game_screen = GameScreen(self, difficulty)
-            self._show(self.game_screen)
-        except Exception:
-            import traceback
-            self._show_error(traceback.format_exc())
+        self.game_screen = GameScreen(self, difficulty)
+        self._show(self.game_screen)
 
     def resume_game(self):
         if not self.saved_game:
             return
-        try:
-            self.game_screen = GameScreen(self, self.saved_game['difficulty'],
-                                          resume_data=self.saved_game)
-            self._show(self.game_screen)
-        except Exception:
-            import traceback
-            self._show_error(traceback.format_exc())
+        self.game_screen = GameScreen(self, self.saved_game['difficulty'],
+                                      resume_data=self.saved_game)
+        self._show(self.game_screen)
 
     def discard_save(self):
         try:
