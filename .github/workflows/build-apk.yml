@@ -32,6 +32,23 @@ jobs:
           restore-keys: |
             buildozer-project-${{ runner.os }}-
 
+      - name: Cache Buildozer project directory
+        uses: actions/cache@v4
+        with:
+          path: .buildozer
+          key: buildozer-project-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-project-${{ runner.os }}-
+
+      # --- LIGNE AJOUTÉE ICI ---
+      - name: Fix Cython version for Kivy
+        run: pip install "cython==0.29.36"
+
+      - name: Build APK
+        env:
+          BUILDOZER_WARN_ON_ROOT: "0"
+        run: yes | buildozer android debug
+        
       - name: Build APK
         env:
           BUILDOZER_WARN_ON_ROOT: "0"
