@@ -1131,7 +1131,7 @@ class GameScreen(BoxLayout):
 class LoadingPopup(ModalView):
     def __init__(self, text, **kwargs):
         super().__init__(size_hint=(None, None), size=(dp(240), dp(100)),
-                         background='', background_color=T.CARD, **kwargs)
+                         background='',background_color=T.CARD, **kwargs)
         self.add_widget(Label(text=text, color=T.TEXT_DARK,
                               font_size=dp(13)))
 
@@ -1164,7 +1164,7 @@ class EndDialog(ModalView):
 class HintDialog(ModalView):
     def __init__(self, title, explanation, on_close, **kwargs):
         super().__init__(size_hint=(0.88, None), height=dp(380),
-                         background='', background_color=T.CARD, **kwargs)
+                         background='',background_color=T.CARD, **kwargs)
         layout = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(10))
 
         # Icone + titre
