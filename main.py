@@ -511,28 +511,16 @@ class NumberButton(ButtonBehavior, Widget):
     def _redraw(self, *a):
         self.canvas.clear()
         self.clear_widgets()
-        if self.is_active:
-            fg = T.PRIMARY
-        elif self.count_left <= 0:
-            fg = T.TEXT_GREY
-        else:
-            fg = T.PRIMARY
-        font_size = self.height * 0.5 if self.height > 0 else dp(22)
-        lbl = Label(text='[b]{}[/b]'.format(self.num), markup=True,
-                    color=fg, font_size=font_size,
+        
+        # Gris clair si épuisé, Bleu sinon
+        fg = T.PRIMARY if self.is_active or self.count_left > 0 else T.TEXT_GREY
+        
+        # Juste le texte, beaucoup plus grand, sans fond ni bordure
+        lbl = Label(text=str(self.num), color=fg, font_size=dp(38),
                     pos=self.pos, size=self.size,
                     halign='center', valign='middle')
         lbl.text_size = self.size
         self.add_widget(lbl)
-        if self.is_active:
-            with self.canvas:
-                Color(*T.PRIMARY)
-                Line(points=[
-                    self.x + self.width / 2 - dp(14),
-                    self.y + dp(4),
-                    self.x + self.width / 2 + dp(14),
-                    self.y + dp(4)
-                ], width=2)
 
     def on_press(self):
         self._press_time = time.time()
@@ -609,111 +597,70 @@ class GameScreen(BoxLayout):
         instance.text_size = instance.size
 
     def _build_ui(self):
-        # ====== Top bar compacte avec icônes ======
-        top = BoxLayout(size_hint_y=None, height=dp(48),
-                        padding=[dp(10), dp(6), dp(10), 0], spacing=dp(6))
-
-        back_btn = FlatButton(text='<', font_size=dp(20), bold=True,
-                              bg_color=T.CARD, border_color=T.GRID_LINE,
-                              text_color=T.TEXT_DARK,
-                              size_hint_x=None, width=dp(46))
+        # ====== En-tête (Top Bar) ======
+        top = BoxLayout(size_hint_y=None, height=dp(48), padding=[dp(10), dp(6), dp(10), 0])
+        
+        back_btn = FlatButton(text='<', font_size=dp(24), bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_DARK, size_hint_x=None, width=dp(46))
         back_btn.bind(on_release=lambda b: self.go_home())
         top.add_widget(back_btn)
-
-        # Difficulté/erreur/temps centrés
-        center_info = BoxLayout(orientation='vertical', spacing=dp(2))
-        self.diff_label = Label(text=self.difficulty,
-                                font_size=dp(10),
-                                color=T.TEXT_MUTED,
-                                halign='center', valign='middle')
-        self.diff_label.bind(size=self._fix_label)
-        center_info.add_widget(self.diff_label)
-
-        info_row = BoxLayout(spacing=dp(8))
-        self.err_label = Label(text='Erreur: 0/3',
-                               font_size=dp(11), bold=True,
-                               color=T.TEXT_MUTED,
-                               halign='center', valign='middle')
-        self.err_label.bind(size=self._fix_label)
-        info_row.add_widget(self.err_label)
-
-        self.timer_label = Label(text='00:00',
-                                 font_size=dp(11), bold=True,
-                                 color=T.TEXT_MUTED,
-                                 halign='center', valign='middle')
-        self.timer_label.bind(size=self._fix_label)
-        info_row.add_widget(self.timer_label)
-        center_info.add_widget(info_row)
-        top.add_widget(center_info)
-
-        # Bouton pause à droite
-        self.pause_btn = FlatButton(text='||', font_size=dp(16), bold=True,
-                                    bg_color=T.CARD, border_color=T.PRIMARY,
-                                    text_color=T.PRIMARY,
-                                    size_hint_x=None, width=dp(46))
-        self.pause_btn.bind(on_release=lambda b: self.toggle_pause())
-        top.add_widget(self.pause_btn)
-
+        
+        top.add_widget(Widget()) # Espace vide au centre
+        
+        # Simili-icônes à droite (Palette, Partage, Paramètres)
+        icons = Label(text='🎨   ↗   ⚙', font_size=dp(18), color=T.TEXT_DARK, size_hint_x=None, width=dp(100))
+        top.add_widget(icons)
         self.add_widget(top)
 
-        # ====== Grille PLEINE TAILLE ======
-        # On utilise size_hint_y=1 pour que la grille prenne tout l'espace dispo
-        self.grid_anchor = AnchorLayout(
-            anchor_x='center', anchor_y='center',
-            padding=[dp(4), dp(4)])
+        # ====== Ligne d'infos (Facile, Erreur, Temps) ======
+        info_row = BoxLayout(size_hint_y=None, height=dp(30), padding=[dp(20), 0])
+        
+        self.diff_label = Label(text=self.difficulty, font_size=dp(14), color=T.TEXT_MUTED, halign='left', valign='middle')
+        self.diff_label.bind(size=lambda i, v: setattr(i, 'text_size', v))
+        info_row.add_widget(self.diff_label)
+        
+        self.err_label = Label(text='Erreur: 0/3', font_size=dp(14), color=T.TEXT_MUTED, halign='center', valign='middle')
+        self.err_label.bind(size=lambda i, v: setattr(i, 'text_size', v))
+        info_row.add_widget(self.err_label)
+        
+        # Le timer fait office de bouton pause
+        self.timer_btn = FlatButton(text='00:00 ||', font_size=dp(14), bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED, halign='right', valign='middle')
+        self.timer_btn.bind(on_release=lambda b: self.toggle_pause())
+        self.timer_label = self.timer_btn # Pour la compatibilité avec le reste du code
+        info_row.add_widget(self.timer_btn)
+        
+        self.add_widget(info_row)
+
+        # ====== Grille ======
+        self.grid_anchor = AnchorLayout(anchor_x='center', anchor_y='center', padding=[dp(10), dp(10)])
         self.grid = SudokuGrid(self, size_hint=(None, None))
         self.grid_anchor.add_widget(self.grid)
         self.add_widget(self.grid_anchor)
 
         Window.bind(size=self._resize_grid)
-        Clock.schedule_once(lambda dt: self._resize_grid(), 0.01)
-        Clock.schedule_once(lambda dt: self._resize_grid(), 0.2)
+        Clock.schedule_once(lambda dt: self._resize_grid(), 0.1)
 
-        # ====== Boutons d'action (icônes) ======
-        actions = BoxLayout(size_hint_y=None, height=dp(58),
-                            padding=[dp(8), dp(4)], spacing=dp(6))
-
-        # Annuler - flèche retour arrière
-        self.undo_btn = FlatButton(text='[size=22]<-[/size]\n[size=9]Annuler[/size]',
-                                   markup=True,
-                                   halign='center', valign='middle',
-                                   bg_color=T.CARD, border_color=T.GRID_LINE,
-                                   text_color=T.TEXT_DARK)
+        # ====== Boutons d'action (Sans bordures) ======
+        actions = BoxLayout(size_hint_y=None, height=dp(70), padding=[dp(10), dp(10)], spacing=dp(15))
+        
+        # Note le bg_color=(0,0,0,0) et border_color=(0,0,0,0) qui rendent le fond transparent
+        self.undo_btn = FlatButton(text='[size=24]↶[/size]\n[size=10]Annuler[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
         self.undo_btn.bind(on_release=lambda b: self.undo())
-        actions.add_widget(self.undo_btn)
-
-        # Effacer - croix/gomme
-        self.erase_btn = FlatButton(text='[size=22]X[/size]\n[size=9]Effacer[/size]',
-                                    markup=True,
-                                    halign='center', valign='middle',
-                                    bg_color=T.CARD, border_color=T.GRID_LINE,
-                                    text_color=T.TEXT_DARK)
+        
+        self.erase_btn = FlatButton(text='[size=20]✗[/size]\n[size=10]Effacer[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
         self.erase_btn.bind(on_release=lambda b: self.erase())
-        actions.add_widget(self.erase_btn)
-
-        # Notes - crayon
-        self.notes_btn = FlatButton(text='[size=20]N[/size]\n[size=9]Notes OFF[/size]',
-                                    markup=True,
-                                    halign='center', valign='middle',
-                                    bg_color=T.CARD, border_color=T.GRID_LINE,
-                                    text_color=T.TEXT_DARK)
+        
+        self.notes_btn = FlatButton(text='[size=20]✎[/size]\n[size=10]Notes[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
         self.notes_btn.bind(on_release=lambda b: self.toggle_notes())
-        actions.add_widget(self.notes_btn)
-
-        # Astuce - ampoule
-        self.hint_btn = FlatButton(text='[size=20]?[/size]\n[size=9]Astuce 2/2[/size]',
-                                   markup=True,
-                                   halign='center', valign='middle',
-                                   bg_color=T.CARD, border_color=T.GRID_LINE,
-                                   text_color=T.TEXT_DARK)
+        
+        self.hint_btn = FlatButton(text='[size=20]💡[/size]\n[size=10]Astuce[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
         self.hint_btn.bind(on_release=lambda b: self.use_hint())
-        actions.add_widget(self.hint_btn)
-
+        
+        for btn in [self.undo_btn, self.erase_btn, self.notes_btn, self.hint_btn]:
+            actions.add_widget(btn)
         self.add_widget(actions)
 
         # ====== Pavé numérique ======
-        nums = BoxLayout(size_hint_y=None, height=dp(54),
-                         padding=[dp(8), dp(2)], spacing=dp(3))
+        nums = BoxLayout(size_hint_y=None, height=dp(60), padding=[dp(10), dp(5)], spacing=dp(5))
         self.num_buttons = {}
         for i in range(1, 10):
             wrap = NumberButton(num=i, game=self)
@@ -721,13 +668,10 @@ class GameScreen(BoxLayout):
             self.num_buttons[i] = wrap
         self.add_widget(nums)
 
-        # Mode rapide
-        self.hold_label = Label(text='', font_size=dp(10),
-                                color=T.WARNING,
-                                size_hint_y=None, height=dp(20),
-                                italic=True)
+        # Label Mode rapide
+        self.hold_label = Label(text='', font_size=dp(10), color=T.WARNING, size_hint_y=None, height=dp(20), italic=True)
         self.add_widget(self.hold_label)
-
+      
     def _resize_grid(self, *a):
         # Calculer la taille disponible pour la grille
         # Window.width - petit padding
@@ -818,24 +762,36 @@ class GameScreen(BoxLayout):
         return T.CELL_BG
 
     def on_cell_clicked(self, r, c):
+        val_here = self.current[r][c]
+
+        # 1. Si on clique sur une case qui contient DÉJÀ un chiffre (initial ou joué)
+        if val_here != 0:
+            self.selected_cell = (r, c)
+            self.selected_value = val_here
+            
+            # Si le mode rapide (lock) est actif, on bascule le lock sur ce nouveau chiffre
+            if self.hold_mode:
+                self.hold_number = val_here
+                mode_txt = 'notes' if self.notes_mode else 'placement'
+                self.hold_label.text = 'Mode rapide ({}): {}'.format(mode_txt, val_here)
+                
+            self._refresh_all()
+            return
+
+        # 2. Si la case est VIDE et qu'on est en mode rapide (lock)
         if self.hold_mode and self.hold_number is not None:
-            if self.puzzle[r][c] == 0:
-                if self.notes_mode:
-                    self._toggle_note(r, c, self.hold_number)
-                else:
-                    cur = self.current[r][c]
-                    if cur == self.hold_number:
-                        self._place(r, c, 0)
-                    else:
-                        self._place(r, c, self.hold_number)
+            if self.notes_mode:
+                self._toggle_note(r, c, self.hold_number)
+            else:
+                self._place(r, c, self.hold_number)
             self.selected_cell = (r, c)
             self.selected_value = self.hold_number
             self._refresh_all()
             return
 
+        # 3. Comportement normal (case vide, pas de lock)
         self.selected_cell = (r, c)
-        v = self.current[r][c]
-        self.selected_value = v if v != 0 else None
+        self.selected_value = None
         self.grid._redraw()
 
     def _toggle_note(self, r, c, n):
