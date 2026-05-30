@@ -507,6 +507,8 @@ class NumberButton(ButtonBehavior, Widget):
         super().__init__(**kwargs)
         self.num = num
         self.game = game
+        self._press_time = 0
+        self._long_event = None
         
         self.lbl = Label(text=str(self.num), font_size=dp(38), halign='center', valign='middle')
         self.add_widget(self.lbl)
@@ -527,8 +529,21 @@ class NumberButton(ButtonBehavior, Widget):
         if self.lbl.color != new_color:
             self.lbl.color = new_color
 
+    def on_press(self):
+        self._press_time = time.time()
+        self._long_event = Clock.schedule_once(lambda dt: self._fire_long(), 0.5)
+
     def on_release(self):
-        self.game.on_number_tap(self.num)
+        if self._long_event:
+            self._long_event.cancel()
+            self._long_event = None
+        elapsed = time.time() - self._press_time
+        if elapsed < 0.5:
+            self.game.on_number_tap(self.num)
+
+    def _fire_long(self):
+        self._long_event = None
+        self.game.on_number_long(self.num)
       
 # ============================================================
 #  ÉCRAN DE JEU
@@ -762,22 +777,18 @@ class GameScreen(BoxLayout):
                 return
 
             self.selected_cell = (r, c)
-            if not self.hold_mode:
-                self.selected_value = None
-            elif self.hold_mode and self.hold_number is not None:
+            if getattr(self, 'hold_mode', False) and getattr(self, 'hold_number', None) is not None:
                 if self.notes_mode:
                     self._toggle_note(r, c, self.hold_number)
                 else:
                     self._place(r, c, self.hold_number)
                 self.selected_value = self.hold_number
+            else:
+                self.selected_value = None
                 
             self._refresh_all()
         except Exception as e:
-            # S'il y a un bug, ça l'affiche au lieu de fermer l'appli !
-            self.err_label.text = "Bug grille: " + str(e)[:15]
-            self.err_label.color = T.DANGER
-
-    
+            self.err_label.text = "Erreur Grille"
 
     def toggle_notes(self):
         if self.game_over or self.paused:
@@ -916,14 +927,16 @@ class GameScreen(BoxLayout):
         try:
             if self.paused or self.game_over:
                 return
-            if self.hold_mode:
-                if self.hold_number == num:
+                
+            if getattr(self, 'hold_mode', False):
+                if getattr(self, 'hold_number', None) == num:
                     self._cancel_hold_mode()
                 else:
                     self.hold_number = num
                     self.selected_value = num
                     mode_txt = 'notes' if self.notes_mode else 'placement'
-                    self.hold_label.text = f'Mode rapide ({mode_txt}): {num}'
+                    if hasattr(self, 'hold_label'):
+                        self.hold_label.text = f'Mode rapide ({mode_txt}): {num}'
                     self._refresh_all()
             else:
                 if self.selected_cell is not None:
@@ -939,10 +952,9 @@ class GameScreen(BoxLayout):
                 self.selected_value = num
                 self._refresh_all()
         except Exception as e:
-            # S'il y a un bug, ça l'affiche au lieu de fermer l'appli !
-            self.err_label.text = "Bug chiffre: " + str(e)[:15]
-            self.err_label.color = T.DANGER
+            self.err_label.text = "Erreur Chiffre"
 
+  
     def on_number_long(self, num):
         if self.paused or self.game_over:
             return
@@ -950,13 +962,15 @@ class GameScreen(BoxLayout):
         self.hold_number = num
         self.selected_value = num
         mode_txt = 'notes' if self.notes_mode else 'placement'
-        self.hold_label.text = 'Mode rapide ({}): {}'.format(mode_txt, num)
+        if hasattr(self, 'hold_label'):
+            self.hold_label.text = f'Mode rapide ({mode_txt}): {num}'
         self._refresh_all()
 
     def _cancel_hold_mode(self):
         self.hold_mode = False
         self.hold_number = None
-        self.hold_label.text = ''
+        if hasattr(self, 'hold_label'):
+            self.hold_label.text = ''
         self._refresh_all()
 
     def _refresh_all(self):
