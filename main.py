@@ -797,35 +797,7 @@ class GameScreen(BoxLayout):
                 self.err_label.text = f"Bug: {err[:15]}"
             self.err_label.color = T.DANGER
 
-    def toggle_notes(self):
-        if self.game_over or self.paused:
-            return
-        self.notes_mode = not self.notes_mode
-        ic, tx = int(dp(22)), int(dp(11))
-        
-        if self.notes_mode:
-            self.notes_btn.text = f'[font=fa-solid-900.ttf][size={ic}]\uf303[/size][/font]\n[size={tx}]Notes ON[/size]'
-            self.notes_btn.text_color = T.PRIMARY
-        else:
-            self.notes_btn.text = f'[font=fa-solid-900.ttf][size={ic}]\uf303[/size][/font]\n[size={tx}]Notes OFF[/size]'
-            self.notes_btn.text_color = T.TEXT_MUTED
-          
-    def _erase_cell(self, r, c):
-        if self.puzzle[r][c] != 0:
-            return
-        if self.current[r][c] != 0:
-            self._place(r, c, 0)
-        elif self.notes[r][c]:
-            self.history.append({
-                'type': 'erase_notes', 'r': r, 'c': c,
-                'notes_before': list(self.notes[r][c])
-            })
-            self.notes[r][c] = set()
-
-    def _is_complete(self):
-        return all(self.current[r][c] == self.solution[r][c]
-                   for r in range(9) for c in range(9))
-      def _toggle_note(self, r, c, n):
+    def _toggle_note(self, r, c, n):
         if getattr(self, 'puzzle', None) is None or self.puzzle[r][c] != 0 or self.current[r][c] != 0:
             return
         self.history.append({
