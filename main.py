@@ -778,7 +778,7 @@ class GameScreen(BoxLayout):
 
             self.selected_cell = (r, c)
             if getattr(self, 'hold_mode', False) and getattr(self, 'hold_number', None) is not None:
-                if self.notes_mode:
+                if getattr(self, 'notes_mode', False):
                     self._toggle_note(r, c, self.hold_number)
                 else:
                     self._place(r, c, self.hold_number)
@@ -788,7 +788,14 @@ class GameScreen(BoxLayout):
                 
             self._refresh_all()
         except Exception as e:
-            self.err_label.text = "Erreur Grille"
+            err = str(e)
+            if "attribute" in err.lower():
+                # Extrait le mot exact qui pose problème
+                attr_name = err.split("'")[-2]
+                self.err_label.text = f"Manque: {attr_name}"
+            else:
+                self.err_label.text = f"Bug: {err[:15]}"
+            self.err_label.color = T.DANGER
 
     def toggle_notes(self):
         if self.game_over or self.paused:
@@ -925,10 +932,9 @@ class GameScreen(BoxLayout):
 
     def on_number_tap(self, num):
         try:
-            # Correction Kivy : on force la conversion en nombre entier propre
             num = int(num) 
             
-            if self.paused or self.game_over:
+            if getattr(self, 'paused', False) or getattr(self, 'game_over', False):
                 return
                 
             if getattr(self, 'hold_mode', False):
@@ -944,7 +950,7 @@ class GameScreen(BoxLayout):
             else:
                 if getattr(self, 'selected_cell', None) is not None:
                     r, c = self.selected_cell
-                    if self.puzzle[r][c] == 0:
+                    if getattr(self, 'puzzle', None) is not None and self.puzzle[r][c] == 0:
                         if getattr(self, 'notes_mode', False):
                             self._toggle_note(r, c, num)
                         else:
@@ -956,8 +962,13 @@ class GameScreen(BoxLayout):
                 self._refresh_all()
                 
         except Exception as e:
-            # Cette fois, on affiche la VRAIE erreur envoyée par Python
-            self.err_label.text = f"{type(e).__name__}: {str(e)[:15]}"
+            err = str(e)
+            if "attribute" in err.lower():
+                # Extrait le mot exact qui pose problème
+                attr_name = err.split("'")[-2]
+                self.err_label.text = f"Manque: {attr_name}"
+            else:
+                self.err_label.text = f"Bug: {err[:15]}"
             self.err_label.color = T.DANGER
   
     def on_number_long(self, num):
