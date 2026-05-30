@@ -600,15 +600,13 @@ class GameScreen(BoxLayout):
         # ====== En-tête (Top Bar) ======
         top = BoxLayout(size_hint_y=None, height=dp(48), padding=[dp(10), dp(6), dp(10), 0])
         
-        back_btn = FlatButton(text='<', font_size=dp(24), bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_DARK, size_hint_x=None, width=dp(46))
+        # \uf053 = Chevron gauche FontAwesome
+        back_btn = FlatButton(text='[font=fa-solid-900.ttf]\uf053[/font]', markup=True, font_size=dp(20), 
+                              bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_DARK, size_hint_x=None, width=dp(46))
         back_btn.bind(on_release=lambda b: self.go_home())
         top.add_widget(back_btn)
         
         top.add_widget(Widget()) # Espace vide au centre
-        
-        # Simili-icônes à droite (Palette, Partage, Paramètres)
-        icons = Label(text='🎨   ↗   ⚙', font_size=dp(18), color=T.TEXT_DARK, size_hint_x=None, width=dp(100))
-        top.add_widget(icons)
         self.add_widget(top)
 
         # ====== Ligne d'infos (Facile, Erreur, Temps) ======
@@ -625,7 +623,7 @@ class GameScreen(BoxLayout):
         # Le timer fait office de bouton pause
         self.timer_btn = FlatButton(text='00:00 ||', font_size=dp(14), bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED, halign='right', valign='middle')
         self.timer_btn.bind(on_release=lambda b: self.toggle_pause())
-        self.timer_label = self.timer_btn # Pour la compatibilité avec le reste du code
+        self.timer_label = self.timer_btn
         info_row.add_widget(self.timer_btn)
         
         self.add_widget(info_row)
@@ -639,20 +637,19 @@ class GameScreen(BoxLayout):
         Window.bind(size=self._resize_grid)
         Clock.schedule_once(lambda dt: self._resize_grid(), 0.1)
 
-        # ====== Boutons d'action (Sans bordures) ======
+        # ====== Boutons d'action (Sans bordures avec FontAwesome) ======
         actions = BoxLayout(size_hint_y=None, height=dp(70), padding=[dp(10), dp(10)], spacing=dp(15))
         
-        # Note le bg_color=(0,0,0,0) et border_color=(0,0,0,0) qui rendent le fond transparent
-        self.undo_btn = FlatButton(text='[size=24]↶[/size]\n[size=10]Annuler[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
+        self.undo_btn = FlatButton(text='[font=fa-solid-900.ttf][size=24]\uf0e2[/size][/font]\n[size=10]Annuler[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
         self.undo_btn.bind(on_release=lambda b: self.undo())
         
-        self.erase_btn = FlatButton(text='[size=20]✗[/size]\n[size=10]Effacer[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
+        self.erase_btn = FlatButton(text='[font=fa-solid-900.ttf][size=20]\uf00d[/size][/font]\n[size=10]Effacer[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
         self.erase_btn.bind(on_release=lambda b: self.erase())
         
-        self.notes_btn = FlatButton(text='[size=20]✎[/size]\n[size=10]Notes[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
+        self.notes_btn = FlatButton(text='[font=fa-solid-900.ttf][size=20]\uf303[/size][/font]\n[size=10]Notes OFF[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
         self.notes_btn.bind(on_release=lambda b: self.toggle_notes())
         
-        self.hint_btn = FlatButton(text='[size=20]💡[/size]\n[size=10]Astuce[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
+        self.hint_btn = FlatButton(text='[font=fa-solid-900.ttf][size=20]\uf0eb[/size][/font]\n[size=10]Astuce[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
         self.hint_btn.bind(on_release=lambda b: self.use_hint())
         
         for btn in [self.undo_btn, self.erase_btn, self.notes_btn, self.hint_btn]:
@@ -668,7 +665,6 @@ class GameScreen(BoxLayout):
             self.num_buttons[i] = wrap
         self.add_widget(nums)
 
-        # Label Mode rapide
         self.hold_label = Label(text='', font_size=dp(10), color=T.WARNING, size_hint_y=None, height=dp(20), italic=True)
         self.add_widget(self.hold_label)
       
@@ -794,61 +790,20 @@ class GameScreen(BoxLayout):
         self.selected_value = None
         self.grid._redraw()
 
-    def _toggle_note(self, r, c, n):
-        if self.puzzle[r][c] != 0 or self.current[r][c] != 0:
+    def toggle_notes(self):
+        if self.game_over or self.paused:
             return
-        self.history.append({
-            'type': 'note', 'r': r, 'c': c, 'n': n,
-            'notes_before': list(self.notes[r][c])
-        })
-        if n in self.notes[r][c]:
-            self.notes[r][c].discard(n)
+        self.notes_mode = not self.notes_mode
+        if self.notes_mode:
+            self.notes_btn.text = '[font=fa-solid-900.ttf][size=20]\uf303[/size][/font]\n[size=10]Notes ON[/size]'
+            self.notes_btn.bg_color = T.PRIMARY
+            self.notes_btn.text_color = T.TEXT_LIGHT
+            self.notes_btn.border_color = T.PRIMARY
         else:
-            self.notes[r][c].add(n)
-
-    def _place(self, r, c, num):
-        if self.puzzle[r][c] != 0:
-            return
-        prev = self.current[r][c]
-        was_err = (r, c) in self.error_cells
-        if num == prev and not was_err:
-            return
-
-        self.history.append({
-            'type': 'value', 'r': r, 'c': c, 'prev': prev,
-            'was_err': was_err, 'errors': self.errors,
-            'notes_before': list(self.notes[r][c])
-        })
-
-        self.current[r][c] = num
-        if num != 0:
-            self.notes[r][c] = set()
-            for x in range(9):
-                self.notes[r][x].discard(num)
-                self.notes[x][c].discard(num)
-            br, bc = 3 * (r // 3), 3 * (c // 3)
-            for i in range(3):
-                for j in range(3):
-                    self.notes[br + i][bc + j].discard(num)
-
-        if num == 0:
-            self.error_cells.discard((r, c))
-        else:
-            if num == self.solution[r][c]:
-                self.error_cells.discard((r, c))
-            else:
-                if not was_err:
-                    self.errors += 1
-                self.error_cells.add((r, c))
-                if self.errors >= self.max_errors:
-                    self._refresh_all()
-                    self._game_lost()
-                    return
-
-        self._refresh_all()
-        if self._is_complete():
-            self._game_won()
-
+            self.notes_btn.text = '[font=fa-solid-900.ttf][size=20]\uf303[/size][/font]\n[size=10]Notes OFF[/size]'
+            self.notes_btn.bg_color = (0,0,0,0)
+            self.notes_btn.text_color = T.TEXT_MUTED
+            self.notes_btn.border_color = (0,0,0,0)
     def _erase_cell(self, r, c):
         if self.puzzle[r][c] != 0:
             return
@@ -1018,9 +973,9 @@ class GameScreen(BoxLayout):
         else:
             self.err_label.color = T.TEXT_MUTED
 
-        # Mise à jour bouton astuce
+        # Mise à jour du bouton astuce avec conservation de l'icône FontAwesome
         remaining = self.max_hints - self.hints_used
-        self.hint_btn.text = '[size=20]?[/size]\n[size=9]Astuce {}/{}[/size]'.format(
+        self.hint_btn.text = '[font=fa-solid-900.ttf][size=20]\uf0eb[/size][/font]\n[size=10]Astuce {}/{}[/size]'.format(
             remaining, self.max_hints)
         if remaining <= 0:
             self.hint_btn.text_color = T.TEXT_GREY
