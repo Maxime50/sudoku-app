@@ -157,21 +157,21 @@ class SudokuGenerator:
     def generate(self, difficulty):
         g = [[0] * 9 for _ in range(9)]
         self.fill(g)
-        solution = copy.deepcopy(g)
+        # Remplacement de copy.deepcopy() par une copie de liste ultra-rapide
+        solution = [row[:] for row in g] 
         target = {'Facile': 35, 'Moyen': 45, 'Difficile': 52, 'Expert': 58}[difficulty]
         cells = [(i, j) for i in range(9) for j in range(9)]
         random.shuffle(cells)
         removed = 0
         for (r, c) in cells:
-            if removed >= target:
-                break
+            if removed >= target: break
             backup = g[r][c]
             g[r][c] = 0
-            if self.count(copy.deepcopy(g)) != 1:
+            if self.count([row[:] for row in g]) != 1:
                 g[r][c] = backup
             else:
                 removed += 1
-        return copy.deepcopy(g), solution
+        return [row[:] for row in g], solution
 
 
 # ============================================================
@@ -381,6 +381,15 @@ class SudokuGrid(Widget):
     def __init__(self, game_screen, **kwargs):
         super().__init__(**kwargs)
         self.game = game_screen
+        self.labels = {} # On stocke les étiquettes ici
+        
+        # On crée les 81 labels UNE SEULE FOIS au lancement
+        for r in range(9):
+            for c in range(9):
+                lbl = Label(markup=True, halign='center', valign='middle')
+                self.add_widget(lbl)
+                self.labels[(r, c)] = lbl
+                
         self.bind(pos=self._redraw, size=self._redraw)
 
     @property
@@ -388,13 +397,10 @@ class SudokuGrid(Widget):
         return min(self.width, self.height) / 9.0
 
     def on_touch_down(self, touch):
-        if not self.collide_point(*touch.pos):
-            return False
-        if self.game.paused or self.game.game_over:
-            return True
+        if not self.collide_point(*touch.pos): return False
+        if self.game.paused or self.game.game_over: return True
         cs = self.cell_size
-        if cs <= 0:
-            return True
+        if cs <= 0: return True
         col = int((touch.x - self.x) // cs)
         row = 8 - int((touch.y - self.y) // cs)
         if 0 <= row < 9 and 0 <= col < 9:
@@ -402,94 +408,79 @@ class SudokuGrid(Widget):
         return True
 
     def _redraw(self, *a):
-        self.canvas.clear()
-        if not self.game.puzzle:
-            return
-        with self.canvas:
-            cs = self.cell_size
-            x0 = self.x
-            y0 = self.y
-            grid_size = cs * 9
+        # On ne nettoie QUE le fond (canvas.before), on ne détruit plus les widgets !
+        self.canvas.before.clear()
+        if not self.game.puzzle: return
+        
+        cs = self.cell_size
+        x0, y0 = self.x, self.y
+        grid_size = cs * 9
 
+        with self.canvas.before:
             if self.game.paused:
                 Color(*hex_to_rgba('#E1E6F0'))
                 Rectangle(pos=(x0, y0), size=(grid_size, grid_size))
-                Color(*T.GRID_BORDER)
-                Line(rectangle=(x0, y0, grid_size, grid_size), width=2)
-                return
+            else:
+                for r in range(9):
+                    for c in range(9):
+                        bg = self.game._cell_bg(r, c)
+                        Color(*bg)
+                        Rectangle(pos=(x0 + c * cs, y0 + (8 - r) * cs), size=(cs, cs))
 
-            for r in range(9):
-                for c in range(9):
-                    bg = self.game._cell_bg(r, c)
-                    Color(*bg)
-                    cx = x0 + c * cs
-                    cy = y0 + (8 - r) * cs
-                    Rectangle(pos=(cx, cy), size=(cs, cs))
+                for i in range(10):
+                    if i % 3 == 0:
+                        Color(*T.GRID_BORDER)
+                        width = 1.5
+                    else:
+                        Color(*T.GRID_LINE)
+                        width = 1.0
+                    Line(points=[x0, y0 + i * cs, x0 + grid_size, y0 + i * cs], width=width)
+                    Line(points=[x0 + i * cs, y0, x0 + i * cs, y0 + grid_size], width=width)
 
-            for i in range(10):
-                if i % 3 == 0:
-                    Color(*T.GRID_BORDER)
-                    width = 1.8
-                else:
-                    Color(*T.GRID_LINE)
-                    width = 1.0
-                Line(points=[x0, y0 + i * cs, x0 + grid_size, y0 + i * cs],
-                     width=width)
-                Line(points=[x0 + i * cs, y0, x0 + i * cs, y0 + grid_size],
-                     width=width)
-
-        self.clear_widgets()
         if self.game.paused:
-            lbl = Label(text='[b]Pause[/b]', markup=True,
-                        color=T.TEXT_DARK, font_size=dp(30),
-                        pos=self.pos, size=self.size,
-                        halign='center', valign='middle')
-            lbl.text_size = self.size
-            self.add_widget(lbl)
+            for lbl in self.labels.values(): lbl.text = ""
             return
-        cs = self.cell_size
-        x0 = self.x
-        y0 = self.y
+
+        def to_hex(c):
+            return '{:02x}{:02x}{:02x}'.format(int(c[0]*255), int(c[1]*255), int(c[2]*255))
+        
+        note_color = to_hex(T.TEXT_NOTE)
+        prim_color = to_hex(T.PRIMARY)
+
+        # On met juste à jour le texte des labels existants (100x plus rapide et zéro crash)
         for r in range(9):
             for c in range(9):
+                lbl = self.labels[(r, c)]
+                lbl.pos = (x0 + c * cs, y0 + (8 - r) * cs)
+                lbl.size = (cs, cs)
+                lbl.text_size = (cs, cs)
+
                 v = self.game.current[r][c]
-                cx = x0 + c * cs
-                cy = y0 + (8 - r) * cs
                 if v != 0:
-                    if (r, c) in self.game.error_cells:
-                        col = T.TEXT_ERROR
-                    elif self.game.puzzle[r][c] != 0:
-                        col = T.TEXT_DARK
-                    else:
-                        col = T.TEXT_USER
-                    lbl = Label(
-                        text='[b]{}[/b]'.format(v),
-                        markup=True, color=col,
-                        font_size=cs * 0.55,
-                        pos=(cx, cy), size=(cs, cs),
-                        halign='center', valign='middle')
-                    lbl.text_size = (cs, cs)
-                    self.add_widget(lbl)
+                    col = T.TEXT_ERROR if (r, c) in self.game.error_cells else (T.TEXT_DARK if self.game.puzzle[r][c] != 0 else T.TEXT_USER)
+                    lbl.color = col
+                    lbl.font_size = cs * 0.55
+                    lbl.text = f'[b]{v}[/b]'
                 elif self.game.notes[r][c]:
-                    for n in self.game.notes[r][c]:
-                        nr = (n - 1) // 3
-                        nc = (n - 1) % 3
-                        nx = cx + nc * cs / 3
-                        ny = cy + (2 - nr) * cs / 3
-                        active = self.game.selected_value == n
-                        col = T.PRIMARY if active else T.TEXT_NOTE
-                        weight = '[b]' if active else ''
-                        wclose = '[/b]' if active else ''
-                        lbl = Label(
-                            text='{}{}{}'.format(weight, n, wclose),
-                            markup=True, color=col,
-                            font_size=cs * 0.22,
-                            pos=(nx, ny), size=(cs / 3, cs / 3),
-                            halign='center', valign='middle')
-                        lbl.text_size = (cs / 3, cs / 3)
-                        self.add_widget(lbl)
-
-
+                    lbl.color = (1,1,1,1)
+                    lbl.font_size = cs * 0.25
+                    n_str = ""
+                    for nr in range(3):
+                        for nc in range(3):
+                            n = nr * 3 + nc + 1
+                            if n in self.game.notes[r][c]:
+                                c_hex = prim_color if self.game.selected_value == n else note_color
+                                bold = "[b]" if self.game.selected_value == n else ""
+                                bold_end = "[/b]" if self.game.selected_value == n else ""
+                                n_str += f"[color=#{c_hex}]{bold}{n}{bold_end}[/color]"
+                            else:
+                                n_str += " "
+                            if nc < 2: n_str += "   "
+                        if nr < 2: n_str += "\n"
+                    lbl.text = n_str
+                else:
+                    lbl.text = ""
+                  
 # ============================================================
 #  BOUTON CHIFFRE
 # ============================================================
@@ -750,35 +741,29 @@ class GameScreen(BoxLayout):
     def on_cell_clicked(self, r, c):
         val_here = self.current[r][c]
 
-        # 1. Si on clique sur une case qui contient DÉJÀ un chiffre (initial ou joué)
+        # Si la case contient déjà un chiffre, on le sélectionne
         if val_here != 0:
             self.selected_cell = (r, c)
             self.selected_value = val_here
-            
-            # Si le mode rapide (lock) est actif, on bascule le lock sur ce nouveau chiffre
-            if self.hold_mode:
-                self.hold_number = val_here
-                mode_txt = 'notes' if self.notes_mode else 'placement'
-                self.hold_label.text = 'Mode rapide ({}): {}'.format(mode_txt, val_here)
-                
             self._refresh_all()
             return
 
-        # 2. Si la case est VIDE et qu'on est en mode rapide (lock)
-        if self.hold_mode and self.hold_number is not None:
+        # Si la case est vide
+        self.selected_cell = (r, c)
+        
+        # Le point clé : On enlève la surbrillance de l'ancien chiffre
+        if not self.hold_mode:
+            self.selected_value = None
+            
+        # Si le mode rapide est actif, on place le chiffre mémorisé
+        elif self.hold_mode and self.hold_number is not None:
             if self.notes_mode:
                 self._toggle_note(r, c, self.hold_number)
             else:
                 self._place(r, c, self.hold_number)
-            self.selected_cell = (r, c)
             self.selected_value = self.hold_number
-            self._refresh_all()
-            return
-
-        # 3. Comportement normal (case vide, pas de lock)
-        self.selected_cell = (r, c)
-        self.selected_value = None
-        self.grid._redraw()
+            
+        self._refresh_all()
 
     def toggle_notes(self):
         if self.game_over or self.paused:
