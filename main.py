@@ -825,6 +825,76 @@ class GameScreen(BoxLayout):
     def _is_complete(self):
         return all(self.current[r][c] == self.solution[r][c]
                    for r in range(9) for c in range(9))
+      def _toggle_note(self, r, c, n):
+        if getattr(self, 'puzzle', None) is None or self.puzzle[r][c] != 0 or self.current[r][c] != 0:
+            return
+        self.history.append({
+            'type': 'note', 'r': r, 'c': c, 'n': n,
+            'notes_before': list(self.notes[r][c])
+        })
+        if n in self.notes[r][c]:
+            self.notes[r][c].discard(n)
+        else:
+            self.notes[r][c].add(n)
+
+    def _place(self, r, c, num):
+        if getattr(self, 'puzzle', None) is None or self.puzzle[r][c] != 0:
+            return
+        prev = self.current[r][c]
+        was_err = (r, c) in getattr(self, 'error_cells', set())
+        if num == prev and not was_err:
+            return
+
+        self.history.append({
+            'type': 'value', 'r': r, 'c': c, 'prev': prev,
+            'was_err': was_err, 'errors': getattr(self, 'errors', 0),
+            'notes_before': list(self.notes[r][c])
+        })
+
+        self.current[r][c] = num
+        if num != 0:
+            self.notes[r][c] = set()
+            for x in range(9):
+                self.notes[r][x].discard(num)
+                self.notes[x][c].discard(num)
+            br, bc = 3 * (r // 3), 3 * (c // 3)
+            for i in range(3):
+                for j in range(3):
+                    self.notes[br + i][bc + j].discard(num)
+
+        if num == 0:
+            self.error_cells.discard((r, c))
+        else:
+            if num == self.solution[r][c]:
+                self.error_cells.discard((r, c))
+            else:
+                if not was_err:
+                    self.errors += 1
+                self.error_cells.add((r, c))
+                if self.errors >= self.max_errors:
+                    self._refresh_all()
+                    self._game_lost()
+                    return
+
+        self._refresh_all()
+        if self._is_complete():
+            self._game_won()
+
+    def _erase_cell(self, r, c):
+        if getattr(self, 'puzzle', None) is None or self.puzzle[r][c] != 0:
+            return
+        if self.current[r][c] != 0:
+            self._place(r, c, 0)
+        elif self.notes[r][c]:
+            self.history.append({
+                'type': 'erase_notes', 'r': r, 'c': c,
+                'notes_before': list(self.notes[r][c])
+            })
+            self.notes[r][c] = set()
+
+    def _is_complete(self):
+        return all(self.current[r][c] == self.solution[r][c]
+                   for r in range(9) for c in range(9))
 
     def undo(self):
         if self.paused or self.game_over or not self.history:
