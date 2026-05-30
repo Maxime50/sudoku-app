@@ -925,6 +925,9 @@ class GameScreen(BoxLayout):
 
     def on_number_tap(self, num):
         try:
+            # Correction Kivy : on force la conversion en nombre entier propre
+            num = int(num) 
+            
             if self.paused or self.game_over:
                 return
                 
@@ -934,15 +937,15 @@ class GameScreen(BoxLayout):
                 else:
                     self.hold_number = num
                     self.selected_value = num
-                    mode_txt = 'notes' if self.notes_mode else 'placement'
+                    mode_txt = 'notes' if getattr(self, 'notes_mode', False) else 'placement'
                     if hasattr(self, 'hold_label'):
                         self.hold_label.text = f'Mode rapide ({mode_txt}): {num}'
                     self._refresh_all()
             else:
-                if self.selected_cell is not None:
+                if getattr(self, 'selected_cell', None) is not None:
                     r, c = self.selected_cell
                     if self.puzzle[r][c] == 0:
-                        if self.notes_mode:
+                        if getattr(self, 'notes_mode', False):
                             self._toggle_note(r, c, num)
                         else:
                             self._place(r, c, num)
@@ -951,9 +954,11 @@ class GameScreen(BoxLayout):
                         return
                 self.selected_value = num
                 self._refresh_all()
+                
         except Exception as e:
-            self.err_label.text = "Erreur Chiffre"
-
+            # Cette fois, on affiche la VRAIE erreur envoyée par Python
+            self.err_label.text = f"{type(e).__name__}: {str(e)[:15]}"
+            self.err_label.color = T.DANGER
   
     def on_number_long(self, num):
         if self.paused or self.game_over:
