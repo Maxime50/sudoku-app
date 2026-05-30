@@ -502,42 +502,28 @@ class NumberButton(ButtonBehavior, Widget):
         super().__init__(**kwargs)
         self.num = num
         self.game = game
-        self._press_time = 0
-        self._long_event = None
-        self.bind(pos=self._redraw, size=self._redraw,
-                  is_active=self._redraw, count_left=self._redraw)
-        self._redraw()
-
-    def _redraw(self, *a):
-        self.canvas.clear()
-        self.clear_widgets()
         
-        # Gris clair si épuisé, Bleu sinon
-        fg = T.PRIMARY if self.is_active or self.count_left > 0 else T.TEXT_GREY
+        # On crée le label visuel une seule fois au démarrage
+        self.lbl = Label(text=str(self.num), font_size=dp(38), halign='center', valign='middle')
+        self.add_widget(self.lbl)
         
-        # Juste le texte, beaucoup plus grand, sans fond ni bordure
-        lbl = Label(text=str(self.num), color=fg, font_size=dp(38),
-                    pos=self.pos, size=self.size,
-                    halign='center', valign='middle')
-        lbl.text_size = self.size
-        self.add_widget(lbl)
+        # On lie la mise à jour sans tout redessiner
+        self.bind(pos=self._update_lbl, size=self._update_lbl, 
+                  is_active=self._update_colors, count_left=self._update_colors)
+        Clock.schedule_once(self._update_lbl, 0)
+        self._update_colors()
 
-    def on_press(self):
-        self._press_time = time.time()
-        self._long_event = Clock.schedule_once(
-            lambda dt: self._fire_long(), 0.5)
+    def _update_lbl(self, *a):
+        self.lbl.pos = self.pos
+        self.lbl.size = self.size
+        self.lbl.text_size = self.size
+
+    def _update_colors(self, *a):
+        # Gris clair si le chiffre est épuisé, Bleu sinon
+        self.lbl.color = T.PRIMARY if self.is_active or self.count_left > 0 else T.TEXT_GREY
 
     def on_release(self):
-        if self._long_event:
-            self._long_event.cancel()
-            self._long_event = None
-        elapsed = time.time() - self._press_time
-        if elapsed < 0.5:
-            self.game.on_number_tap(self.num)
-
-    def _fire_long(self):
-        self._long_event = None
-        self.game.on_number_long(self.num)
+        self.game.on_number_tap(self.num)
 
 
 # ============================================================
@@ -638,18 +624,22 @@ class GameScreen(BoxLayout):
         Clock.schedule_once(lambda dt: self._resize_grid(), 0.1)
 
         # ====== Boutons d'action (Sans bordures avec FontAwesome) ======
+        # ====== Boutons d'action ======
         actions = BoxLayout(size_hint_y=None, height=dp(70), padding=[dp(10), dp(10)], spacing=dp(15))
         
-        self.undo_btn = FlatButton(text='[font=fa-solid-900.ttf][size=24]\uf0e2[/size][/font]\n[size=10]Annuler[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
+        ic = int(dp(22)) # Taille de l'icône FontAwesome adaptée à l'écran
+        tx = int(dp(11)) # Taille du texte adaptée à l'écran
+        
+        self.undo_btn = FlatButton(text=f'[font=fa-solid-900.ttf][size={ic}]\uf0e2[/size][/font]\n[size={tx}]Annuler[/size]', markup=True, halign='center', valign='middle', bg_color=[0,0,0,0], border_color=[0,0,0,0], text_color=T.TEXT_MUTED)
         self.undo_btn.bind(on_release=lambda b: self.undo())
         
-        self.erase_btn = FlatButton(text='[font=fa-solid-900.ttf][size=20]\uf00d[/size][/font]\n[size=10]Effacer[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
+        self.erase_btn = FlatButton(text=f'[font=fa-solid-900.ttf][size={ic}]\uf00d[/size][/font]\n[size={tx}]Effacer[/size]', markup=True, halign='center', valign='middle', bg_color=[0,0,0,0], border_color=[0,0,0,0], text_color=T.TEXT_MUTED)
         self.erase_btn.bind(on_release=lambda b: self.erase())
         
-        self.notes_btn = FlatButton(text='[font=fa-solid-900.ttf][size=20]\uf303[/size][/font]\n[size=10]Notes OFF[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
+        self.notes_btn = FlatButton(text=f'[font=fa-solid-900.ttf][size={ic}]\uf303[/size][/font]\n[size={tx}]Notes OFF[/size]', markup=True, halign='center', valign='middle', bg_color=[0,0,0,0], border_color=[0,0,0,0], text_color=T.TEXT_MUTED)
         self.notes_btn.bind(on_release=lambda b: self.toggle_notes())
         
-        self.hint_btn = FlatButton(text='[font=fa-solid-900.ttf][size=20]\uf0eb[/size][/font]\n[size=10]Astuce[/size]', markup=True, halign='center', valign='middle', bg_color=(0,0,0,0), border_color=(0,0,0,0), text_color=T.TEXT_MUTED)
+        self.hint_btn = FlatButton(text=f'[font=fa-solid-900.ttf][size={ic}]\uf0eb[/size][/font]\n[size={tx}]Astuce[/size]', markup=True, halign='center', valign='middle', bg_color=[0,0,0,0], border_color=[0,0,0,0], text_color=T.TEXT_MUTED)
         self.hint_btn.bind(on_release=lambda b: self.use_hint())
         
         for btn in [self.undo_btn, self.erase_btn, self.notes_btn, self.hint_btn]:
@@ -794,16 +784,15 @@ class GameScreen(BoxLayout):
         if self.game_over or self.paused:
             return
         self.notes_mode = not self.notes_mode
+        ic, tx = int(dp(22)), int(dp(11))
+        
         if self.notes_mode:
-            self.notes_btn.text = '[font=fa-solid-900.ttf][size=20]\uf303[/size][/font]\n[size=10]Notes ON[/size]'
-            self.notes_btn.bg_color = T.PRIMARY
-            self.notes_btn.text_color = T.TEXT_LIGHT
-            self.notes_btn.border_color = T.PRIMARY
+            self.notes_btn.text = f'[font=fa-solid-900.ttf][size={ic}]\uf303[/size][/font]\n[size={tx}]Notes ON[/size]'
+            self.notes_btn.text_color = T.PRIMARY
         else:
-            self.notes_btn.text = '[font=fa-solid-900.ttf][size=20]\uf303[/size][/font]\n[size=10]Notes OFF[/size]'
-            self.notes_btn.bg_color = (0,0,0,0)
+            self.notes_btn.text = f'[font=fa-solid-900.ttf][size={ic}]\uf303[/size][/font]\n[size={tx}]Notes OFF[/size]'
             self.notes_btn.text_color = T.TEXT_MUTED
-            self.notes_btn.border_color = (0,0,0,0)
+          
     def _erase_cell(self, r, c):
         if self.puzzle[r][c] != 0:
             return
@@ -967,18 +956,14 @@ class GameScreen(BoxLayout):
         self._refresh_all()
 
     def _refresh_all(self):
-        self.err_label.text = 'Erreur: {}/{}'.format(self.errors, self.max_errors)
-        if self.errors >= 2:
-            self.err_label.color = T.DANGER
-        else:
-            self.err_label.color = T.TEXT_MUTED
+        self.err_label.text = f'Erreur: {self.errors}/{self.max_errors}'
+        self.err_label.color = T.DANGER if self.errors >= 2 else T.TEXT_MUTED
 
-        # Mise à jour du bouton astuce avec conservation de l'icône FontAwesome
         remaining = self.max_hints - self.hints_used
-        self.hint_btn.text = '[font=fa-solid-900.ttf][size=20]\uf0eb[/size][/font]\n[size=10]Astuce {}/{}[/size]'.format(
-            remaining, self.max_hints)
-        if remaining <= 0:
-            self.hint_btn.text_color = T.TEXT_GREY
+        ic, tx = int(dp(22)), int(dp(11))
+        
+        self.hint_btn.text = f'[font=fa-solid-900.ttf][size={ic}]\uf0eb[/size][/font]\n[size={tx}]Astuce {remaining}/{self.max_hints}[/size]'
+        self.hint_btn.text_color = T.TEXT_GREY if remaining <= 0 else T.TEXT_MUTED
 
         counts = {n: 9 for n in range(1, 10)}
         if self.current:
@@ -987,6 +972,7 @@ class GameScreen(BoxLayout):
                     v = self.current[r][c]
                     if v != 0 and (r, c) not in self.error_cells:
                         counts[v] = max(0, counts[v] - 1)
+                        
         for n, btn in self.num_buttons.items():
             btn.count_left = counts[n]
             btn.is_active = self.hold_mode and self.hold_number == n
@@ -1207,8 +1193,7 @@ class HomeScreen(BoxLayout):
         m, s = elapsed // 60, elapsed % 60
 
         card = FlatButton(
-            text='[b]Reprendre la partie[/b]\n[size=11]{} - {:02d}:{:02d} - {}/3[/size]'.format(
-                diff, m, s, errors),
+            text=f'[b]Reprendre la partie[/b]\n[size={int(dp(11))}]{diff} - {m:02d}:{s:02d} - {errors}/3[/size]',
             markup=True, font_size=dp(14),
             halign='center', valign='middle',
             bg_color=T.SUCCESS, border_color=T.SUCCESS,
@@ -1221,10 +1206,10 @@ class HomeScreen(BoxLayout):
         color = T.DIFF_COLORS[diff]
         stats = self.app.stats[diff]
         best = stats.get('best_time')
-        best_str = '{:02d}:{:02d}'.format(best // 60, best % 60) if best else '-'
+        best_str = f'{best // 60:02d}:{best % 60:02d}' if best else '-'
 
         btn = FlatButton(
-            text='[b]{}[/b]\n[size=10]Record: {}[/size]'.format(diff, best_str),
+            text=f'[b]{diff}[/b]\n[size={int(dp(10))}]Record: {best_str}[/size]',
             font_size=dp(15), markup=True,
             halign='center', valign='middle',
             bg_color=T.CARD, border_color=color,
