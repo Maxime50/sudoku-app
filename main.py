@@ -770,27 +770,36 @@ class GameScreen(BoxLayout):
         try:
             val_here = self.current[r][c]
 
+            # 1. Si on clique sur un chiffre déjà posé
             if val_here != 0:
                 self.selected_cell = (r, c)
                 self.selected_value = val_here
+                # Si le mode rapide est activé, on bascule intelligemment sur ce chiffre
+                if getattr(self, 'hold_mode', False):
+                    self.hold_number = val_here
+                    mode_txt = 'notes' if getattr(self, 'notes_mode', False) else 'placement'
+                    if hasattr(self, 'hold_label'):
+                        self.hold_label.text = f'Mode rapide ({mode_txt}): {val_here}'
                 self._refresh_all()
                 return
 
-            self.selected_cell = (r, c)
+            # 2. Si on clique sur une case vide
             if getattr(self, 'hold_mode', False) and getattr(self, 'hold_number', None) is not None:
                 if getattr(self, 'notes_mode', False):
                     self._toggle_note(r, c, self.hold_number)
                 else:
                     self._place(r, c, self.hold_number)
                 self.selected_value = self.hold_number
+                # CORRECTION : On enlève la croix grise en mode rapide
+                self.selected_cell = None 
             else:
+                self.selected_cell = (r, c)
                 self.selected_value = None
                 
             self._refresh_all()
         except Exception as e:
             err = str(e)
             if "attribute" in err.lower():
-                # Extrait le mot exact qui pose problème
                 attr_name = err.split("'")[-2]
                 self.err_label.text = f"Manque: {attr_name}"
             else:
@@ -985,6 +994,8 @@ class GameScreen(BoxLayout):
                 else:
                     self.hold_number = num
                     self.selected_value = num
+                    # CORRECTION : On enlève la croix grise quand on change de chiffre
+                    self.selected_cell = None 
                     mode_txt = 'notes' if getattr(self, 'notes_mode', False) else 'placement'
                     if hasattr(self, 'hold_label'):
                         self.hold_label.text = f'Mode rapide ({mode_txt}): {num}'
@@ -1001,12 +1012,13 @@ class GameScreen(BoxLayout):
                         self._refresh_all()
                         return
                 self.selected_value = num
+                # CORRECTION : On enlève la croix si on tape juste un chiffre en bas
+                self.selected_cell = None 
                 self._refresh_all()
                 
         except Exception as e:
             err = str(e)
             if "attribute" in err.lower():
-                # Extrait le mot exact qui pose problème
                 attr_name = err.split("'")[-2]
                 self.err_label.text = f"Manque: {attr_name}"
             else:
@@ -1014,12 +1026,14 @@ class GameScreen(BoxLayout):
             self.err_label.color = T.DANGER
   
     def on_number_long(self, num):
-        if self.paused or self.game_over:
+        if getattr(self, 'paused', False) or getattr(self, 'game_over', False):
             return
         self.hold_mode = True
         self.hold_number = num
         self.selected_value = num
-        mode_txt = 'notes' if self.notes_mode else 'placement'
+        # CORRECTION : On enlève la croix au lancement du mode rapide
+        self.selected_cell = None 
+        mode_txt = 'notes' if getattr(self, 'notes_mode', False) else 'placement'
         if hasattr(self, 'hold_label'):
             self.hold_label.text = f'Mode rapide ({mode_txt}): {num}'
         self._refresh_all()
